@@ -1,12 +1,12 @@
-# ============================================================================
-# Docify — Automated Setup & Launcher Script (Windows PowerShell)
+﻿# ============================================================================
+# Docify - Automated Setup & Launcher Script (Windows PowerShell)
 # ============================================================================
 $ErrorActionPreference = "Stop"
 $ProjectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $ProjectRoot
 
 Write-Host "============================================================" -ForegroundColor Green
-Write-Host "   Docify — Spotify for PDF & Word Documents (Setup)        " -ForegroundColor Green
+Write-Host "   Docify - Spotify for PDF & Word Documents (Setup)        " -ForegroundColor Green
 Write-Host "============================================================" -ForegroundColor Green
 Write-Host ""
 
@@ -92,3 +92,4 @@ if ($choice -eq "1") {
 } else {
     Write-Host "All set! See SETUP.md and README.md for commands." -ForegroundColor Cyan
 }
+

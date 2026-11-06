@@ -34,7 +34,8 @@
         "FOREGROUND_SERVICE",
         "FOREGROUND_SERVICE_MEDIA_PLAYBACK",
         "WAKE_LOCK",
-        "INTERNET"
+        "INTERNET",
+        "android.permission.MODIFY_AUDIO_SETTINGS"
       ],
       "intentFilters": [
         {
@@ -72,7 +73,13 @@
         {
           "microphonePermission": false
         }
-      ]
-    ]
+      ],
+      "expo-asset"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "c846e151-423b-4b9f-898d-a19a22af4b6d"
+      }
+    }
   }
 }
