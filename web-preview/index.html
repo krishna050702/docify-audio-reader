@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Docify — Spotify for PDF & Word Documents</title>
+  <!-- PDF.js & Mammoth.js for real client-side PDF and DOCX extraction -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
+  <style>
+    :root {
+      --bg: #121212;
+      --card: #1a1a1a;
+      --card-hover: #242424;
+      --green: #1DB954;
+      --green-dim: rgba(29, 185, 84, 0.16);
+      --text: #FFFFFF;
+      --sub: #A1A1AA;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    body {
+      background: #09090b;
+      color: var(--text);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      padding: 16px;
+    }
+    .phone-frame {
+      width: 100%;
+      max-width: 430px;
+      height: 860px;
+      background: var(--bg);
+      border-radius: 36px;
+      border: 8px solid #27272a;
+      box-shadow: 0 25px 60px rgba(0,0,0,0.75);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      position: relative;
+    }
+    .top-bar {
+      padding: 20px 18px 12px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+    }
+    .brand { display: flex; align-items: center; gap: 8px; font-weight: 800; font-size: 19px; }
+    .brand-dot { width: 12px; height: 12px; border-radius: 50%; background: var(--green); display: inline-block; }
+    .upload-btn {
+      background: var(--green);
+      color: #000;
+      border: none;
+      padding: 8px 14px;
+      border-radius: 20px;
+      font-weight: 800;
+      font-size: 12.5px;
+      cursor: pointer;
+    }
+    .main-scroll { flex: 1; overflow-y: auto; padding: 16px; }
+    .section-label { font-size: 11px; font-weight: 800; letter-spacing: 1px; color: var(--green); text-transform: uppercase; margin-bottom: 10px; }
+    .album-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 18px; }
+    .album-item {
+      display: flex;
+      align-items: center;
+      background: var(--card);
+      padding: 10px 12px;
+      border-radius: 12px;
+      cursor: pointer;
+      border: 1px solid transparent;
+      transition: 0.15s;
+    }
+    .album-item.active { border-color: var(--green); background: #19251d; }
+    .album-cover {
+      width: 46px;
+      height: 46px;
+      border-radius: 8px;
+      background: linear-gradient(135deg, #1DB954, #064E3B);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      font-size: 11px;
+      margin-right: 12px;
+      flex-shrink: 0;
+    }
+    .album-info { flex: 1; overflow: hidden; }
+    .album-title { font-weight: 700; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .album-sub { color: var(--sub); font-size: 11.5px; margin-top: 2px; }
+    .mode-pills { display: flex; background: rgba(255,255,255,0.07); border-radius: 20px; padding: 3px; margin-bottom: 12px; }
+    .mode-pill {
+      flex: 1;
+      text-align: center;
+      padding: 7px 0;
+      font-size: 12px;
+      font-weight: 700;
+      border-radius: 18px;
+      cursor: pointer;
+      color: #fff;
+    }
+    .mode-pill.active { background: var(--green); color: #000; }
+    .lyrics-box {
+      background: #161618;
+      border-radius: 16px;
+      padding: 16px;
+      height: 310px;
+      overflow-y: auto;
+      border: 1px solid rgba(255,255,255,0.08);
+    }
+    .lyric-line {
+      padding: 9px 10px;
+      border-radius: 10px;
+      color: rgba(255,255,255,0.42);
+      font-size: 16px;
+      line-height: 1.5;
+      font-weight: 600;
+      margin-bottom: 6px;
+      cursor: pointer;
+      transition: 0.15s;
+    }
+    .lyric-line.active {
+      background: var(--green-dim);
+      border-left: 3px solid var(--green);
+      color: #fff;
+      font-size: 17.5px;
+      font-weight: 700;
+    }
+    .word-active {
+      background: var(--green);
+      color: #000;
+      padding: 1px 4px;
+      border-radius: 4px;
+      font-weight: 800;
+    }
+    .chapter-item {
+      padding: 10px 12px;
+      border-radius: 10px;
+      margin-bottom: 6px;
+      background: rgba(255,255,255,0.04);
+      cursor: pointer;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .chapter-item.active { border: 1px solid var(--green); color: var(--green); font-weight: 700; }
+    .player-footer {
+      background: #18181b;
+      padding: 14px 18px 20px;
+      border-top: 1px solid rgba(255,255,255,0.09);
+    }
+    .now-playing-label { font-size: 13px; font-weight: 700; margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .voice-row { display: flex; gap: 8px; margin-bottom: 10px; align-items: center; }
+    .voice-select {
+      flex: 1;
+      background: #27272a;
+      color: #fff;
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 8px;
+      padding: 6px 8px;
+      font-size: 11.5px;
+    }
+    .controls { display: flex; justify-content: space-between; align-items: center; margin-top: 6px; }
+    .ctrl-btn {
+      background: rgba(255,255,255,0.1);
+      color: #fff;
+      border: none;
+      padding: 8px 12px;
+      border-radius: 16px;
+      font-weight: 700;
+      font-size: 12px;
+      cursor: pointer;
+    }
+    .play-circle {
+      width: 54px;
+      height: 54px;
+      border-radius: 50%;
+      background: var(--green);
+      color: #000;
+      border: none;
+      font-size: 18px;
+      font-weight: 900;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <div class="phone-frame">
+    <div class="top-bar">
+      <div class="brand"><span class="brand-dot"></span> Docify</div>
+      <label class="upload-btn">
+        + Upload PDF / DOCX
+        <input type="file" id="fileInput" accept=".pdf,.docx,.txt,.md" style="display:none" />
+      </label>
+    </div>
+
+    <div class="main-scroll">
+      <div class="section-label">Your Document Albums</div>
+      <div class="album-list" id="albumList"></div>
+
+      <div class="mode-pills">
+        <div class="mode-pill active" id="tabLyrics" onclick="setMode('lyrics')">Spotify Lyrics View</div>
+        <div class="mode-pill" id="tabChapters" onclick="setMode('chapters')">Chapters (Tracks)</div>
+      </div>
+
+      <div class="lyrics-box" id="viewportBox"></div>
+    </div>
+
+    <div class="player-footer">
+      <div class="now-playing-label" id="nowPlayingTitle">Track 1</div>
+      <div class="voice-row">
+        <select id="voiceSelect" class="voice-select"></select>
+        <button class="ctrl-btn" id="speedBtn" onclick="cycleSpeed()">1.0x</button>
+      </div>
+      <div class="controls">
+        <button class="ctrl-btn" onclick="prevSegment()">⏮ Prev</button>
+        <button class="play-circle" id="playBtn" onclick="togglePlay()">▶</button>
+        <button class="ctrl-btn" onclick="nextSegment()">Next ⏭</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    if (window.pdfjsLib) {
+      window.pdfjsLib.GlobalWorkerOptions.workerSrc =
+        'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    }
+
+    const speeds = [0.8, 1.0, 1.25, 1.5, 2.0];
+    let speedIdx = 1;
+    let viewMode = 'lyrics';
+    let isPlaying = false;
+    let activeAlbumIdx = 0;
+    let activeChapterIdx = 0;
+    let activeSegIdx = 0;
+    let activeWordIdx = -1;
+    let wordTimer = null;
+
+    const albums = [
+      {
+        title: "Deep Focus: Future of Audio Reading.pdf",
+        type: "PDF",
+        chapters: [
+          {
+            title: "⚡ Track 0: Executive Summary (TL;DR)",
+            segments: [
+              "Audio summary for Deep Focus: Future of Audio Reading.",
+              "Documents are automatically structured into chapters and synced word-by-word like Spotify lyrics.",
+              "Citations, page numbers, and running headers are stripped out before synthesis."
+            ]
+          },
+          {
+            title: "1. The Attention Economy & Deep Focus",
+            segments: [
+              "In a world saturated with constant notifications, long-form reading has become increasingly difficult for busy professionals and students.",
+              "By transforming static PDFs and Word documents into chapter-indexed audio streams with live synced lyrics, your ears can absorb complex material effortlessly.",
+              "Tap any sentence in this lyric view to jump the voice directly to that exact spot."
+            ]
+          },
+          {
+            title: "2. Hybrid On-Device & Cloud Neural TTS",
+            segments: [
+              "When you are on a flight or subway, On-Device Neural TTS synthesizes natural human prosody directly on your phone at zero cost.",
+              "When connected, you can switch seamlessly to studio Cloud Neural voices with millisecond word timestamps."
+            ]
+          }
+        ]
+      }
+    ];
+
+    function cleanAndSplitIntoChapters(title, rawText) {
+      let text = rawText.replace(/\r\n/g, '\n')
+        .replace(/([a-zA-Z])-\n\s*([a-z])/g, '$1$2')
+        .replace(/\s*\[\d+(?:\s*[,–-]\s*\d+)*\]/g, '');
+
+      const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+      const chapters = [];
+      let current = { title: "1. Document Content", rawParas: [] };
+
+      for (const line of lines) {
+        if (/^(?:chapter|section|part|\d+\.)\s+/i.test(line) && line.length < 80) {
+          if (current.rawParas.length > 0) chapters.push(current);
+          current = { title: line, rawParas: [] };
+        } else {
+          current.rawParas.push(line);
+        }
+      }
+      if (current.rawParas.length > 0) chapters.push(current);
+
+      const finalChapters = chapters.map(c => {
+        const full = c.rawParas.join(' ');
+        const sentences = (full.match(/[^.!?]+[.!?]+/g) || [full]).map(s => s.trim()).filter(Boolean);
+        return { title: c.title, segments: sentences.slice(0, 80) };
+      });
+
+      finalChapters.unshift({
+        title: "⚡ Track 0: Executive Summary (TL;DR)",
+        segments: [
+          `Executive audio overview for ${title}.`,
+          finalChapters[0]?.segments[0] || "Ready for playback."
+        ]
+      });
+
+      return finalChapters;
+    }
+
+    document.getElementById('fileInput').addEventListener('change', async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const ext = file.name.split('.').pop().toLowerCase();
+      let extracted = "";
+
+      if (ext === 'pdf' && window.pdfjsLib) {
+        const buf = await file.arrayBuffer();
+        const pdf = await window.pdfjsLib.getDocument({ data: buf }).promise;
+        const pages = [];
+        for (let i = 1; i <= pdf.numPages; i++) {
+          const page = await pdf.getPage(i);
+          const content = await page.getTextContent();
+          pages.push(content.items.map(item => item.str).join(' '));
+        }
+        extracted = pages.join('\n\n');
+      } else if (ext === 'docx' && window.mammoth) {
+        const buf = await file.arrayBuffer();
+        const res = await window.mammoth.extractRawText({ arrayBuffer: buf });
+        extracted = res.value;
+      } else {
+        extracted = await file.text();
+      }
+
+      if (extracted.trim()) {
+        albums.unshift({
+          title: file.name,
+          type: ext.toUpperCase(),
+          chapters: cleanAndSplitIntoChapters(file.name, extracted)
+        });
+        activeAlbumIdx = 0;
+        activeChapterIdx = 0;
+        activeSegIdx = 0;
+        renderAll();
+        startSpeech();
+      }
+    });
+
+    function populateVoices() {
+      const sel = document.getElementById('voiceSelect');
+      const voices = window.speechSynthesis ? window.speechSynthesis.getVoices() : [];
+      sel.innerHTML = '';
+      const defaultOpt = document.createElement('option');
+      defaultOpt.value = '';
+      defaultOpt.textContent = '⚡ On-Device Neural Default';
+      sel.appendChild(defaultOpt);
+      voices.filter(v => v.lang.startsWith('en')).forEach((v, idx) => {
+        const opt = document.createElement('option');
+        opt.value = v.name;
+        opt.textContent = `${v.name} (${v.lang})`;
+        sel.appendChild(opt);
+      });
+    }
+    if (window.speechSynthesis) {
+      window.speechSynthesis.onvoiceschanged = populateVoices;
+      populateVoices();
+    }
+
+    function setMode(m) {
+      viewMode = m;
+      document.getElementById('tabLyrics').className = 'mode-pill ' + (m === 'lyrics' ? 'active' : '');
+      document.getElementById('tabChapters').className = 'mode-pill ' + (m === 'chapters' ? 'active' : '');
+      renderViewport();
+    }
+
+    function renderAll() {
+      const list = document.getElementById('albumList');
+      list.innerHTML = albums.map((a, idx) => `
+        <div class="album-item ${idx === activeAlbumIdx ? 'active' : ''}" onclick="selectAlbum(${idx})">
+          <div class="album-cover">${a.type}</div>
+          <div class="album-info">
+            <div class="album-title">${a.title}</div>
+            <div class="album-sub">${a.chapters.length} Tracks • Auto-Cleaned</div>
+          </div>
+        </div>
+      `).join('');
+      renderViewport();
+    }
+
+    function renderViewport() {
+      const album = albums[activeAlbumIdx];
+      const chapter = album.chapters[activeChapterIdx];
+      document.getElementById('nowPlayingTitle').textContent = `${chapter.title} (${activeSegIdx + 1}/${chapter.segments.length})`;
+      document.getElementById('playBtn').textContent = isPlaying ? '⏸' : '▶';
+
+      const box = document.getElementById('viewportBox');
+      if (viewMode === 'chapters') {
+        box.innerHTML = album.chapters.map((c, idx) => `
+          <div class="chapter-item ${idx === activeChapterIdx ? 'active' : ''}" onclick="selectChapter(${idx})">
+            <span>${c.title}</span>
+            <span style="font-size:11px;opacity:0.7">${c.segments.length} lines</span>
+          </div>
+        `).join('');
+      } else {
+        box.innerHTML = chapter.segments.map((seg, idx) => {
+          if (idx !== activeSegIdx) {
+            return `<div class="lyric-line" onclick="jumpToSegment(${idx})">${seg}</div>`;
+          }
+          const words = seg.split(/\s+/);
+          const htmlWords = words.map((w, wIdx) =>
+            wIdx === activeWordIdx ? `<span class="word-active">${w}</span>` : w
+          ).join(' ');
+          return `<div class="lyric-line active" id="activeLyricLine" onclick="jumpToSegment(${idx})">${htmlWords}</div>`;
+        }).join('');
+        const activeEl = document.getElementById('activeLyricLine');
+        if (activeEl) activeEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }
+
+    function selectAlbum(idx) {
+      activeAlbumIdx = idx;
+      activeChapterIdx = 0;
+      activeSegIdx = 0;
+      renderAll();
+      if (isPlaying) startSpeech();
+    }
+
+    function selectChapter(idx) {
+      activeChapterIdx = idx;
+      activeSegIdx = 0;
+      setMode('lyrics');
+      startSpeech();
+    }
+
+    function jumpToSegment(idx) {
+      activeSegIdx = idx;
+      startSpeech();
+    }
+
+    function cycleSpeed() {
+      speedIdx = (speedIdx + 1) % speeds.length;
+      document.getElementById('speedBtn').textContent = speeds[speedIdx] + 'x';
+      if (isPlaying) startSpeech();
+    }
+
+    function togglePlay() {
+      if (isPlaying) {
+        isPlaying = false;
+        window.speechSynthesis?.cancel();
+        clearInterval(wordTimer);
+        renderViewport();
+      } else {
+        startSpeech();
+      }
+    }
+
+    function startSpeech() {
+      isPlaying = true;
+      window.speechSynthesis?.cancel();
+      clearInterval(wordTimer);
+
+      const album = albums[activeAlbumIdx];
+      const chapter = album.chapters[activeChapterIdx];
+      const text = chapter.segments[activeSegIdx] || "";
+      const words = text.split(/\s+/);
+      activeWordIdx = 0;
+      renderViewport();
+
+      const utter = new SpeechSynthesisUtterance(text);
+      utter.rate = speeds[speedIdx];
+      const chosenVoiceName = document.getElementById('voiceSelect').value;
+      if (chosenVoiceName) {
+        const found = window.speechSynthesis.getVoices().find(v => v.name === chosenVoiceName);
+        if (found) utter.voice = found;
+      }
+
+      const estMsPerWord = Math.max(140, (360 / speeds[speedIdx]));
+      wordTimer = setInterval(() => {
+        if (activeWordIdx < words.length - 1) {
+          activeWordIdx++;
+          renderViewport();
+        }
+      }, estMsPerWord);
+
+      utter.onBoundary = (e) => {
+        if (e.name === 'word') {
+          const prefix = text.slice(0, e.charIndex);
+          activeWordIdx = Math.max(0, prefix.trim().split(/\s+/).filter(Boolean).length);
+          renderViewport();
+        }
+      };
+
+      utter.onend = () => {
+        clearInterval(wordTimer);
+        if (isPlaying) nextSegment();
+      };
+
+      window.speechSynthesis?.speak(utter);
+    }
+
+    function nextSegment() {
+      const album = albums[activeAlbumIdx];
+      const chapter = album.chapters[activeChapterIdx];
+      if (activeSegIdx + 1 < chapter.segments.length) {
+        activeSegIdx++;
+        if (isPlaying) startSpeech(); else renderViewport();
+      } else if (activeChapterIdx + 1 < album.chapters.length) {
+        activeChapterIdx++;
+        activeSegIdx = 0;
+        if (isPlaying) startSpeech(); else renderViewport();
+      } else {
+        isPlaying = false;
+        renderViewport();
+      }
+    }
+
+    function prevSegment() {
+      if (activeSegIdx > 0) activeSegIdx--;
+      else if (activeChapterIdx > 0) {
+        activeChapterIdx--;
+        activeSegIdx = 0;
+      }
+      if (isPlaying) startSpeech(); else renderViewport();
+    }
+
+    renderAll();
+  </script>
+</body>
+</html>
