@@ -2,9 +2,10 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="theme-color" content="#121212" />
   <title>Docify — Spotify for PDF & Word Documents</title>
-  <!-- PDF.js & Mammoth.js for real client-side PDF and DOCX extraction -->
+  <!-- PDF.js & Mammoth.js for client-side PDF and DOCX extraction -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
   <style>
@@ -17,7 +18,13 @@
       --text: #FFFFFF;
       --sub: #A1A1AA;
     }
-    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      -webkit-tap-highlight-color: transparent;
+    }
     body {
       background: #09090b;
       color: var(--text);
@@ -25,71 +32,177 @@
       justify-content: center;
       align-items: center;
       min-height: 100vh;
-      padding: 16px;
+      padding: 12px;
     }
     .phone-frame {
       width: 100%;
-      max-width: 430px;
-      height: 860px;
+      max-width: 460px;
+      height: 92vh;
+      max-height: 900px;
       background: var(--bg);
-      border-radius: 36px;
-      border: 8px solid #27272a;
-      box-shadow: 0 25px 60px rgba(0,0,0,0.75);
+      border-radius: 32px;
+      border: 6px solid #27272a;
+      box-shadow: 0 25px 60px rgba(0,0,0,0.8);
       display: flex;
       flex-direction: column;
       overflow: hidden;
       position: relative;
     }
+    @media (max-width: 500px) {
+      body { padding: 0; }
+      .phone-frame {
+        height: 100dvh;
+        max-height: none;
+        border-radius: 0;
+        border: none;
+      }
+    }
     .top-bar {
-      padding: 20px 18px 12px;
+      padding: 16px 16px 12px;
       display: flex;
       justify-content: space-between;
       align-items: center;
-      border-bottom: 1px solid rgba(255,255,255,0.06);
+      border-bottom: 1px solid rgba(255,255,255,0.07);
+      gap: 8px;
     }
-    .brand { display: flex; align-items: center; gap: 8px; font-weight: 800; font-size: 19px; }
-    .brand-dot { width: 12px; height: 12px; border-radius: 50%; background: var(--green); display: inline-block; }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 800;
+      font-size: 18px;
+    }
+    .brand-dot {
+      width: 11px;
+      height: 11px;
+      border-radius: 50%;
+      background: var(--green);
+      display: inline-block;
+      box-shadow: 0 0 10px var(--green);
+    }
+    .top-actions {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
     .upload-btn {
       background: var(--green);
       color: #000;
       border: none;
-      padding: 8px 14px;
+      padding: 8px 13px;
       border-radius: 20px;
       font-weight: 800;
-      font-size: 12.5px;
+      font-size: 12px;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .paste-btn {
+      background: rgba(255,255,255,0.1);
+      color: #fff;
+      border: 1px solid rgba(255,255,255,0.12);
+      padding: 7px 11px;
+      border-radius: 20px;
+      font-weight: 700;
+      font-size: 11.5px;
       cursor: pointer;
     }
-    .main-scroll { flex: 1; overflow-y: auto; padding: 16px; }
-    .section-label { font-size: 11px; font-weight: 800; letter-spacing: 1px; color: var(--green); text-transform: uppercase; margin-bottom: 10px; }
-    .album-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 18px; }
+    .status-banner {
+      display: none;
+      background: rgba(29, 185, 84, 0.18);
+      border-bottom: 1px solid var(--green);
+      color: #fff;
+      font-size: 12px;
+      font-weight: 600;
+      padding: 8px 14px;
+      text-align: center;
+    }
+    .main-scroll {
+      flex: 1;
+      overflow-y: auto;
+      padding: 14px 16px;
+      display: flex;
+      flex-direction: column;
+    }
+    .section-header-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+    .section-label {
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 1px;
+      color: var(--green);
+      text-transform: uppercase;
+    }
+    .album-list {
+      display: flex;
+      flex-direction: column;
+      gap: 7px;
+      margin-bottom: 14px;
+      max-height: 150px;
+      overflow-y: auto;
+    }
     .album-item {
       display: flex;
       align-items: center;
       background: var(--card);
-      padding: 10px 12px;
+      padding: 9px 11px;
       border-radius: 12px;
       cursor: pointer;
       border: 1px solid transparent;
       transition: 0.15s;
     }
-    .album-item.active { border-color: var(--green); background: #19251d; }
+    .album-item.active {
+      border-color: var(--green);
+      background: #19251d;
+    }
     .album-cover {
-      width: 46px;
-      height: 46px;
+      width: 42px;
+      height: 42px;
       border-radius: 8px;
       background: linear-gradient(135deg, #1DB954, #064E3B);
       display: flex;
       align-items: center;
       justify-content: center;
       font-weight: 800;
-      font-size: 11px;
-      margin-right: 12px;
+      font-size: 10.5px;
+      margin-right: 10px;
       flex-shrink: 0;
     }
-    .album-info { flex: 1; overflow: hidden; }
-    .album-title { font-weight: 700; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .album-sub { color: var(--sub); font-size: 11.5px; margin-top: 2px; }
-    .mode-pills { display: flex; background: rgba(255,255,255,0.07); border-radius: 20px; padding: 3px; margin-bottom: 12px; }
+    .album-info {
+      flex: 1;
+      overflow: hidden;
+    }
+    .album-title {
+      font-weight: 700;
+      font-size: 13.5px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .album-sub {
+      color: var(--sub);
+      font-size: 11px;
+      margin-top: 2px;
+    }
+    .album-del-btn {
+      background: transparent;
+      border: none;
+      color: #777;
+      font-size: 15px;
+      padding: 4px 8px;
+      cursor: pointer;
+    }
+    .album-del-btn:hover { color: #f87171; }
+    .mode-pills {
+      display: flex;
+      background: rgba(255,255,255,0.07);
+      border-radius: 20px;
+      padding: 3px;
+      margin-bottom: 10px;
+    }
     .mode-pill {
       flex: 1;
       text-align: center;
@@ -100,12 +213,16 @@
       cursor: pointer;
       color: #fff;
     }
-    .mode-pill.active { background: var(--green); color: #000; }
+    .mode-pill.active {
+      background: var(--green);
+      color: #000;
+    }
     .lyrics-box {
       background: #161618;
       border-radius: 16px;
-      padding: 16px;
-      height: 310px;
+      padding: 14px;
+      flex: 1;
+      min-height: 220px;
       overflow-y: auto;
       border: 1px solid rgba(255,255,255,0.08);
     }
@@ -120,12 +237,18 @@
       cursor: pointer;
       transition: 0.15s;
     }
+    .lyric-line.past {
+      color: rgba(255,255,255,0.26);
+    }
     .lyric-line.active {
       background: var(--green-dim);
       border-left: 3px solid var(--green);
       color: #fff;
       font-size: 17.5px;
       font-weight: 700;
+    }
+    .word-spoken {
+      color: var(--green);
     }
     .word-active {
       background: var(--green);
@@ -143,15 +266,80 @@
       display: flex;
       justify-content: space-between;
       align-items: center;
+      font-size: 13.5px;
     }
-    .chapter-item.active { border: 1px solid var(--green); color: var(--green); font-weight: 700; }
+    .chapter-item.active {
+      border: 1px solid var(--green);
+      background: rgba(29, 185, 84, 0.12);
+      color: var(--green);
+      font-weight: 700;
+    }
     .player-footer {
       background: #18181b;
-      padding: 14px 18px 20px;
+      padding: 12px 16px 16px;
       border-top: 1px solid rgba(255,255,255,0.09);
     }
-    .now-playing-label { font-size: 13px; font-weight: 700; margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .voice-row { display: flex; gap: 8px; margin-bottom: 10px; align-items: center; }
+    .now-playing-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 6px;
+      gap: 8px;
+    }
+    .now-playing-label {
+      font-size: 13px;
+      font-weight: 700;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      flex: 1;
+    }
+    .seg-counter-pill {
+      background: rgba(255,255,255,0.1);
+      color: #fff;
+      font-size: 11px;
+      font-weight: 700;
+      padding: 3px 8px;
+      border-radius: 10px;
+      flex-shrink: 0;
+    }
+    .scrubber-wrap {
+      margin: 6px 0 10px;
+    }
+    .scrubber-slider {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 100%;
+      height: 6px;
+      border-radius: 4px;
+      background: rgba(255,255,255,0.2);
+      outline: none;
+      cursor: pointer;
+    }
+    .scrubber-slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: var(--green);
+      border: 2px solid #fff;
+      cursor: pointer;
+    }
+    .scrubber-meta {
+      display: flex;
+      justify-content: space-between;
+      font-size: 10.5px;
+      color: var(--sub);
+      margin-top: 4px;
+      font-weight: 600;
+    }
+    .voice-row {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 10px;
+      align-items: center;
+    }
     .voice-select {
       flex: 1;
       background: #27272a;
@@ -161,17 +349,22 @@
       padding: 6px 8px;
       font-size: 11.5px;
     }
-    .controls { display: flex; justify-content: space-between; align-items: center; margin-top: 6px; }
+    .controls {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
     .ctrl-btn {
       background: rgba(255,255,255,0.1);
       color: #fff;
       border: none;
-      padding: 8px 12px;
+      padding: 8px 11px;
       border-radius: 16px;
       font-weight: 700;
       font-size: 12px;
       cursor: pointer;
     }
+    .ctrl-btn:active { transform: scale(0.96); }
     .play-circle {
       width: 54px;
       height: 54px;
@@ -179,44 +372,124 @@
       background: var(--green);
       color: #000;
       border: none;
-      font-size: 18px;
+      font-size: 20px;
       font-weight: 900;
       cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 4px 16px rgba(29, 185, 84, 0.4);
     }
+    /* Paste Modal */
+    .modal-backdrop {
+      display: none;
+      position: absolute;
+      inset: 0;
+      background: rgba(0,0,0,0.82);
+      z-index: 50;
+      align-items: center;
+      justify-content: center;
+      padding: 18px;
+    }
+    .modal-sheet {
+      background: #1e1e22;
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 18px;
+      width: 100%;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .modal-input, .modal-textarea {
+      width: 100%;
+      background: #121214;
+      border: 1px solid rgba(255,255,255,0.12);
+      color: #fff;
+      border-radius: 10px;
+      padding: 10px;
+      font-size: 13px;
+    }
+    .modal-textarea { min-height: 130px; resize: vertical; }
   </style>
 </head>
 <body>
   <div class="phone-frame">
     <div class="top-bar">
       <div class="brand"><span class="brand-dot"></span> Docify</div>
-      <label class="upload-btn">
-        + Upload PDF / DOCX
-        <input type="file" id="fileInput" accept=".pdf,.docx,.txt,.md" style="display:none" />
-      </label>
+      <div class="top-actions">
+        <button class="paste-btn" onclick="openPasteModal()">Paste Text</button>
+        <label class="upload-btn">
+          + Upload PDF / DOCX
+          <input type="file" id="fileInput" accept=".pdf,.docx,.txt,.md" style="display:none" />
+        </label>
+      </div>
     </div>
 
+    <div class="status-banner" id="statusBanner">Extracting & cleaning document...</div>
+
     <div class="main-scroll">
-      <div class="section-label">Your Document Albums</div>
+      <div class="section-header-row">
+        <div class="section-label">Your Document Albums (<span id="albumCount">1</span>)</div>
+      </div>
       <div class="album-list" id="albumList"></div>
 
       <div class="mode-pills">
-        <div class="mode-pill active" id="tabLyrics" onclick="setMode('lyrics')">Spotify Lyrics View</div>
-        <div class="mode-pill" id="tabChapters" onclick="setMode('chapters')">Chapters (Tracks)</div>
+        <div class="mode-pill active" id="tabLyrics" onclick="setMode('lyrics')">Live Lyrics</div>
+        <div class="mode-pill" id="tabChapters" onclick="setMode('chapters')">Chapters (<span id="chapterCount">0</span>)</div>
       </div>
 
       <div class="lyrics-box" id="viewportBox"></div>
     </div>
 
     <div class="player-footer">
-      <div class="now-playing-label" id="nowPlayingTitle">Track 1</div>
+      <div class="now-playing-row">
+        <div class="now-playing-label" id="nowPlayingTitle">Track 1</div>
+        <div class="seg-counter-pill" id="segCounterPill">1 / 1</div>
+      </div>
+
+      <!-- Interactive Slide / Seek Bar -->
+      <div class="scrubber-wrap">
+        <input
+          type="range"
+          id="scrubberSlider"
+          class="scrubber-slider"
+          min="0"
+          max="10"
+          value="0"
+          oninput="onScrubberInput(this.value)"
+          onchange="onScrubberChange(this.value)"
+        />
+        <div class="scrubber-meta">
+          <span id="trackProgressLabel">Track 1 of 3</span>
+          <span>Drag slider or tap sentence to seek</span>
+        </div>
+      </div>
+
       <div class="voice-row">
-        <select id="voiceSelect" class="voice-select"></select>
+        <select id="voiceSelect" class="voice-select" onchange="onVoiceChanged()"></select>
         <button class="ctrl-btn" id="speedBtn" onclick="cycleSpeed()">1.0x</button>
       </div>
+
       <div class="controls">
+        <button class="ctrl-btn" onclick="seekRelative(-3)" title="Rewind 3 sentences">⏪ -3</button>
         <button class="ctrl-btn" onclick="prevSegment()">⏮ Prev</button>
         <button class="play-circle" id="playBtn" onclick="togglePlay()">▶</button>
         <button class="ctrl-btn" onclick="nextSegment()">Next ⏭</button>
+        <button class="ctrl-btn" onclick="seekRelative(3)" title="Forward 3 sentences">+3 ⏩</button>
+      </div>
+    </div>
+
+    <!-- Paste Text Modal -->
+    <div class="modal-backdrop" id="pasteModal">
+      <div class="modal-sheet">
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+          <strong style="font-size:15px;">Paste Article or Notes</strong>
+          <button class="paste-btn" onclick="closePasteModal()">✕</button>
+        </div>
+        <input type="text" id="pasteTitle" class="modal-input" placeholder="Document Title (e.g. Research Notes)" />
+        <textarea id="pasteBody" class="modal-textarea" placeholder="Paste chapters, article text, or study notes here..."></textarea>
+        <button class="upload-btn" style="padding:11px;font-size:13.5px;" onclick="convertPastedText()">Convert & Play Now</button>
       </div>
     </div>
   </div>
@@ -227,7 +500,8 @@
         'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
     }
 
-    const speeds = [0.8, 1.0, 1.25, 1.5, 2.0];
+    const STORAGE_KEY = 'docify_web_state_v2';
+    const speeds = [0.8, 1.0, 1.25, 1.5, 1.75, 2.0];
     let speedIdx = 1;
     let viewMode = 'lyrics';
     let isPlaying = false;
@@ -236,71 +510,170 @@
     let activeSegIdx = 0;
     let activeWordIdx = -1;
     let wordTimer = null;
+    let currentUtteranceId = 0;
 
-    const albums = [
+    const DEFAULT_ALBUMS = [
       {
-        title: "Deep Focus: Future of Audio Reading.pdf",
+        title: "Deep Focus: Future of Audio Reading",
         type: "PDF",
+        lastChapterIdx: 0,
+        lastSegIdx: 0,
         chapters: [
           {
-            title: "⚡ Track 0: Executive Summary (TL;DR)",
+            title: "Executive Summary (Quick Overview)",
             segments: [
               "Audio summary for Deep Focus: Future of Audio Reading.",
-              "Documents are automatically structured into chapters and synced word-by-word like Spotify lyrics.",
-              "Citations, page numbers, and running headers are stripped out before synthesis."
+              "Documents are automatically structured into chapters and synced word by word like Spotify lyrics.",
+              "Citations, underscores, bullet symbols, page numbers, and running headers are stripped out before voice synthesis."
             ]
           },
           {
-            title: "1. The Attention Economy & Deep Focus",
+            title: "1. The Attention Economy and Deep Focus",
             segments: [
               "In a world saturated with constant notifications, long-form reading has become increasingly difficult for busy professionals and students.",
               "By transforming static PDFs and Word documents into chapter-indexed audio streams with live synced lyrics, your ears can absorb complex material effortlessly.",
-              "Tap any sentence in this lyric view to jump the voice directly to that exact spot."
+              "Tap any sentence in this lyric view or drag the slide bar below to jump the voice directly to that exact spot."
             ]
           },
           {
-            title: "2. Hybrid On-Device & Cloud Neural TTS",
+            title: "2. Hybrid On-Device and Cloud Neural TTS",
             segments: [
-              "When you are on a flight or subway, On-Device Neural TTS synthesizes natural human prosody directly on your phone at zero cost.",
-              "When connected, you can switch seamlessly to studio Cloud Neural voices with millisecond word timestamps."
+              "When you are commuting or offline, Neural TTS synthesizes natural human prosody directly on your device at zero cost.",
+              "Your exact reading position is automatically saved so you can close the tab and resume right where you left off."
             ]
           }
         ]
       }
     ];
 
+    let albums = DEFAULT_ALBUMS;
+
+    /**
+     * Sanitizes text before speech synthesis so underscores, bullets, TOC dot leaders,
+     * markdown tokens, and symbols are never spoken aloud.
+     */
+    function sanitizeTextForSpeech(input) {
+      if (!input) return '';
+      let s = input;
+      s = s.replace(/[⚡•●▪▸◦‣⁃◆◇■□★☆✓✔✗✘→⇒➔➤►◄▲▼♦♥♠♣]/g, ' ');
+      s = s.replace(/_{2,}/g, ' ');
+      s = s.replace(/[-–—=~*#]{2,}/g, ' ');
+      s = s.replace(/(?:\.\s*){4,}/g, '. ');
+      s = s.replace(/_/g, ' ');
+      s = s.replace(/[|¦│┃─━┌┐└┘├┤┬┴┼]/g, ', ');
+      s = s.replace(/\be\.g\.,?\b/gi, 'for example,');
+      s = s.replace(/\bi\.e\.,?\b/gi, 'that is,');
+      s = s.replace(/\bvs\.?\b/gi, 'versus');
+      s = s.replace(/\betc\.(?=\s|$)/gi, 'et cetera');
+      s = s.replace(/\bFig(?:s)?\.\s*(\d+)/gi, 'Figure $1');
+      s = s.replace(/\band\/or\b/gi, 'and or');
+      s = s.replace(/([a-zA-Z]{2,})\/([a-zA-Z]{2,})/g, '$1 or $2');
+      s = s.replace(/[\\/]+/g, ' ');
+      s = s.replace(/\s*&\s*/g, ' and ');
+      s = s.replace(/[`^~#*<>{}\[\]]/g, ' ');
+      s = s.replace(/\s+([,.;:!?])/g, '$1');
+      s = s.replace(/\s{2,}/g, ' ');
+      return s.trim();
+    }
+
+    function saveStateToStorage() {
+      try {
+        if (albums[activeAlbumIdx]) {
+          albums[activeAlbumIdx].lastChapterIdx = activeChapterIdx;
+          albums[activeAlbumIdx].lastSegIdx = activeSegIdx;
+        }
+        const payload = {
+          albums: albums.slice(0, 8),
+          activeAlbumIdx,
+          activeChapterIdx,
+          activeSegIdx,
+          speedIdx
+        };
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+      } catch (e) {
+        // Ignore storage quota errors on huge files
+      }
+    }
+
+    function loadStateFromStorage() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) return;
+        const data = JSON.parse(raw);
+        if (Array.isArray(data.albums) && data.albums.length > 0) {
+          albums = data.albums;
+          activeAlbumIdx = Math.min(data.activeAlbumIdx || 0, albums.length - 1);
+          const chaps = albums[activeAlbumIdx].chapters || [];
+          activeChapterIdx = Math.min(data.activeChapterIdx || 0, Math.max(0, chaps.length - 1));
+          const segs = chaps[activeChapterIdx]?.segments || [];
+          activeSegIdx = Math.min(data.activeSegIdx || 0, Math.max(0, segs.length - 1));
+          if (typeof data.speedIdx === 'number') speedIdx = data.speedIdx;
+        }
+      } catch (e) {}
+    }
+
     function cleanAndSplitIntoChapters(title, rawText) {
-      let text = rawText.replace(/\r\n/g, '\n')
-        .replace(/([a-zA-Z])-\n\s*([a-z])/g, '$1$2')
-        .replace(/\s*\[\d+(?:\s*[,–-]\s*\d+)*\]/g, '');
+      let text = rawText
+        .replace(/\r\n/g, '\n')
+        .replace(/([a-zA-Z])-\n[ \t]*([a-z])/g, '$1$2')
+        .replace(/\[\s*\d{1,4}(?:\s*[,;–—-]\s*\d{1,4}){0,10}\s*\]/g, ' ')
+        .replace(/https?:\/\/\S+/gi, ' ');
 
-      const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+      const rawLines = text.split('\n');
       const chapters = [];
-      let current = { title: "1. Document Content", rawParas: [] };
+      let current = { title: "1. Introduction", rawParas: [] };
 
-      for (const line of lines) {
-        if (/^(?:chapter|section|part|\d+\.)\s+/i.test(line) && line.length < 80) {
+      for (const rawLine of rawLines) {
+        const line = rawLine.trim();
+        if (!line) continue;
+        if ((line.includes('....') || line.includes('___')) && /\d+\s*$/.test(line)) continue;
+        if (/^(?:page|p\.)?\s*\d+(?:\s*(?:of|\/)\s*\d+)?$/i.test(line)) continue;
+
+        const cleaned = sanitizeTextForSpeech(line);
+        if (!cleaned || !/[a-zA-Z]{2,}/.test(cleaned)) continue;
+
+        if (/^(?:chapter|section|part|module|\d+(?:\.\d+)?\s+[A-Z])/i.test(cleaned) && cleaned.length < 85 && !/[.,;]$/.test(cleaned)) {
           if (current.rawParas.length > 0) chapters.push(current);
-          current = { title: line, rawParas: [] };
+          current = { title: cleaned, rawParas: [] };
         } else {
-          current.rawParas.push(line);
+          current.rawParas.push(cleaned);
         }
       }
       if (current.rawParas.length > 0) chapters.push(current);
 
-      const finalChapters = chapters.map(c => {
+      const finalChapters = [];
+      for (const c of chapters) {
         const full = c.rawParas.join(' ');
-        const sentences = (full.match(/[^.!?]+[.!?]+/g) || [full]).map(s => s.trim()).filter(Boolean);
-        return { title: c.title, segments: sentences.slice(0, 80) };
-      });
+        const rawSentences = (full.match(/[^.!?]+[.!?]+|.+$/g) || [full])
+          .map(s => sanitizeTextForSpeech(s))
+          .filter(s => s.length > 2 && /[a-zA-Z]{2,}/.test(s));
 
-      finalChapters.unshift({
-        title: "⚡ Track 0: Executive Summary (TL;DR)",
-        segments: [
-          `Executive audio overview for ${title}.`,
-          finalChapters[0]?.segments[0] || "Ready for playback."
-        ]
-      });
+        // Group into digestible chunks of max 35 sentences per chapter track so big PDFs never lag
+        if (rawSentences.length <= 40) {
+          if (rawSentences.length > 0) {
+            finalChapters.push({ title: c.title, segments: rawSentences });
+          }
+        } else {
+          let part = 1;
+          for (let i = 0; i < rawSentences.length; i += 35) {
+            finalChapters.push({
+              title: `${c.title} (Part ${part++})`,
+              segments: rawSentences.slice(i, i + 35)
+            });
+          }
+        }
+      }
+
+      const cleanDocTitle = sanitizeTextForSpeech(title.replace(/\.(pdf|docx|txt|md)$/i, ''));
+      if (finalChapters.length > 0) {
+        finalChapters.unshift({
+          title: "Executive Summary (Quick Overview)",
+          segments: [
+            `Audio overview for ${cleanDocTitle}. This document has ${finalChapters.length} chapters.`,
+            finalChapters[0]?.segments[0] || "Ready for playback."
+          ]
+        });
+      }
 
       return finalChapters;
     }
@@ -308,59 +681,135 @@
     document.getElementById('fileInput').addEventListener('change', async (e) => {
       const file = e.target.files[0];
       if (!file) return;
-      const ext = file.name.split('.').pop().toLowerCase();
-      let extracted = "";
+      const banner = document.getElementById('statusBanner');
+      banner.style.display = 'block';
+      banner.textContent = `Extracting chapters from "${file.name}"...`;
 
-      if (ext === 'pdf' && window.pdfjsLib) {
-        const buf = await file.arrayBuffer();
-        const pdf = await window.pdfjsLib.getDocument({ data: buf }).promise;
-        const pages = [];
-        for (let i = 1; i <= pdf.numPages; i++) {
-          const page = await pdf.getPage(i);
-          const content = await page.getTextContent();
-          pages.push(content.items.map(item => item.str).join(' '));
+      try {
+        const ext = file.name.split('.').pop().toLowerCase();
+        let extracted = "";
+
+        if (ext === 'pdf' && window.pdfjsLib) {
+          const buf = await file.arrayBuffer();
+          const pdf = await window.pdfjsLib.getDocument({ data: buf }).promise;
+          const pages = [];
+          const maxPages = Math.min(pdf.numPages, 250);
+          for (let i = 1; i <= maxPages; i++) {
+            if (i % 5 === 0) {
+              banner.textContent = `Reading PDF page ${i} of ${maxPages}...`;
+              await new Promise(r => setTimeout(r, 0));
+            }
+            const page = await pdf.getPage(i);
+            const content = await page.getTextContent();
+            pages.push(content.items.map(item => item.str).join(' '));
+          }
+          extracted = pages.join('\n\n');
+        } else if (ext === 'docx' && window.mammoth) {
+          const buf = await file.arrayBuffer();
+          const res = await window.mammoth.extractRawText({ arrayBuffer: buf });
+          extracted = res.value;
+        } else {
+          extracted = await file.text();
         }
-        extracted = pages.join('\n\n');
-      } else if (ext === 'docx' && window.mammoth) {
-        const buf = await file.arrayBuffer();
-        const res = await window.mammoth.extractRawText({ arrayBuffer: buf });
-        extracted = res.value;
-      } else {
-        extracted = await file.text();
-      }
 
-      if (extracted.trim()) {
-        albums.unshift({
-          title: file.name,
-          type: ext.toUpperCase(),
-          chapters: cleanAndSplitIntoChapters(file.name, extracted)
-        });
-        activeAlbumIdx = 0;
-        activeChapterIdx = 0;
-        activeSegIdx = 0;
-        renderAll();
-        startSpeech();
+        if (extracted.trim()) {
+          const cleanName = sanitizeTextForSpeech(file.name.replace(/\.(pdf|docx|txt|md)$/i, '')) || file.name;
+          albums.unshift({
+            title: cleanName,
+            type: ext.toUpperCase(),
+            lastChapterIdx: 0,
+            lastSegIdx: 0,
+            chapters: cleanAndSplitIntoChapters(cleanName, extracted)
+          });
+          activeAlbumIdx = 0;
+          activeChapterIdx = 0;
+          activeSegIdx = 0;
+          saveStateToStorage();
+          renderAll();
+          startSpeech();
+        } else {
+          alert('No selectable text found in this document.');
+        }
+      } catch (err) {
+        alert('Error parsing file: ' + (err.message || err));
+      } finally {
+        banner.style.display = 'none';
+        e.target.value = '';
       }
     });
+
+    function openPasteModal() {
+      document.getElementById('pasteModal').style.display = 'flex';
+    }
+    function closePasteModal() {
+      document.getElementById('pasteModal').style.display = 'none';
+    }
+    function convertPastedText() {
+      const title = document.getElementById('pasteTitle').value.trim() || 'Custom Audio Note';
+      const body = document.getElementById('pasteBody').value.trim();
+      if (!body) return;
+      albums.unshift({
+        title: sanitizeTextForSpeech(title) || title,
+        type: 'TXT',
+        lastChapterIdx: 0,
+        lastSegIdx: 0,
+        chapters: cleanAndSplitIntoChapters(title, body)
+      });
+      activeAlbumIdx = 0;
+      activeChapterIdx = 0;
+      activeSegIdx = 0;
+      document.getElementById('pasteTitle').value = '';
+      document.getElementById('pasteBody').value = '';
+      closePasteModal();
+      saveStateToStorage();
+      renderAll();
+      startSpeech();
+    }
 
     function populateVoices() {
       const sel = document.getElementById('voiceSelect');
       const voices = window.speechSynthesis ? window.speechSynthesis.getVoices() : [];
+      const prevVal = sel.value;
       sel.innerHTML = '';
+
+      // Sort high-quality Natural / Neural / Google / Online voices first
+      const enVoices = voices.filter(v => v.lang && v.lang.toLowerCase().startsWith('en'));
+      enVoices.sort((a, b) => {
+        const score = (v) => {
+          const n = v.name.toLowerCase();
+          let s = 0;
+          if (n.includes('natural') || n.includes('neural') || n.includes('online')) s += 50;
+          if (n.includes('google') || n.includes('aria') || n.includes('ava') || n.includes('jenny') || n.includes('guy')) s += 30;
+          if (n.includes('premium') || n.includes('enhanced') || n.includes('siri')) s += 25;
+          return s;
+        };
+        return score(b) - score(a);
+      });
+
       const defaultOpt = document.createElement('option');
-      defaultOpt.value = '';
-      defaultOpt.textContent = '⚡ On-Device Neural Default';
+      defaultOpt.value = enVoices[0] ? enVoices[0].name : '';
+      defaultOpt.textContent = enVoices[0]
+        ? `⚡ Best Neural: ${enVoices[0].name}`
+        : '⚡ On-Device Neural Default';
       sel.appendChild(defaultOpt);
-      voices.filter(v => v.lang.startsWith('en')).forEach((v, idx) => {
+
+      enVoices.forEach((v) => {
         const opt = document.createElement('option');
         opt.value = v.name;
         opt.textContent = `${v.name} (${v.lang})`;
         sel.appendChild(opt);
       });
+
+      if (prevVal) sel.value = prevVal;
     }
+
     if (window.speechSynthesis) {
       window.speechSynthesis.onvoiceschanged = populateVoices;
       populateVoices();
+    }
+
+    function onVoiceChanged() {
+      if (isPlaying) startSpeech();
     }
 
     function setMode(m) {
@@ -370,72 +819,156 @@
       renderViewport();
     }
 
+    function deleteAlbum(e, idx) {
+      e.stopPropagation();
+      if (albums.length <= 1) return;
+      albums.splice(idx, 1);
+      if (activeAlbumIdx >= albums.length) activeAlbumIdx = 0;
+      activeChapterIdx = albums[activeAlbumIdx].lastChapterIdx || 0;
+      activeSegIdx = albums[activeAlbumIdx].lastSegIdx || 0;
+      saveStateToStorage();
+      renderAll();
+    }
+
     function renderAll() {
+      document.getElementById('albumCount').textContent = albums.length;
       const list = document.getElementById('albumList');
-      list.innerHTML = albums.map((a, idx) => `
-        <div class="album-item ${idx === activeAlbumIdx ? 'active' : ''}" onclick="selectAlbum(${idx})">
-          <div class="album-cover">${a.type}</div>
-          <div class="album-info">
-            <div class="album-title">${a.title}</div>
-            <div class="album-sub">${a.chapters.length} Tracks • Auto-Cleaned</div>
+      list.innerHTML = albums.map((a, idx) => {
+        const chIdx = idx === activeAlbumIdx ? activeChapterIdx : (a.lastChapterIdx || 0);
+        const sIdx = idx === activeAlbumIdx ? activeSegIdx : (a.lastSegIdx || 0);
+        return `
+          <div class="album-item ${idx === activeAlbumIdx ? 'active' : ''}" onclick="selectAlbum(${idx})">
+            <div class="album-cover">${a.type}</div>
+            <div class="album-info">
+              <div class="album-title">${a.title}</div>
+              <div class="album-sub">Track ${chIdx + 1}/${a.chapters.length} • Sentence ${sIdx + 1}</div>
+            </div>
+            ${albums.length > 1 ? `<button class="album-del-btn" onclick="deleteAlbum(event, ${idx})" title="Remove">🗑</button>` : ''}
           </div>
-        </div>
-      `).join('');
+        `;
+      }).join('');
       renderViewport();
     }
 
     function renderViewport() {
       const album = albums[activeAlbumIdx];
-      const chapter = album.chapters[activeChapterIdx];
-      document.getElementById('nowPlayingTitle').textContent = `${chapter.title} (${activeSegIdx + 1}/${chapter.segments.length})`;
+      if (!album) return;
+      const chapter = album.chapters[activeChapterIdx] || album.chapters[0];
+      if (!chapter) return;
+
+      document.getElementById('chapterCount').textContent = album.chapters.length;
+      document.getElementById('nowPlayingTitle').textContent = chapter.title;
+      document.getElementById('segCounterPill').textContent = `${activeSegIdx + 1} / ${chapter.segments.length}`;
+      document.getElementById('trackProgressLabel').textContent = `Track ${activeChapterIdx + 1} of ${album.chapters.length}`;
       document.getElementById('playBtn').textContent = isPlaying ? '⏸' : '▶';
+      document.getElementById('speedBtn').textContent = speeds[speedIdx] + 'x';
+
+      const slider = document.getElementById('scrubberSlider');
+      slider.max = Math.max(0, chapter.segments.length - 1);
+      slider.value = activeSegIdx;
 
       const box = document.getElementById('viewportBox');
       if (viewMode === 'chapters') {
         box.innerHTML = album.chapters.map((c, idx) => `
           <div class="chapter-item ${idx === activeChapterIdx ? 'active' : ''}" onclick="selectChapter(${idx})">
             <span>${c.title}</span>
-            <span style="font-size:11px;opacity:0.7">${c.segments.length} lines</span>
+            <span style="font-size:11px;opacity:0.7">${c.segments.length} sentences</span>
           </div>
         `).join('');
       } else {
         box.innerHTML = chapter.segments.map((seg, idx) => {
           if (idx !== activeSegIdx) {
-            return `<div class="lyric-line" onclick="jumpToSegment(${idx})">${seg}</div>`;
+            return `<div class="lyric-line ${idx < activeSegIdx ? 'past' : ''}" onclick="jumpToSegment(${idx})">${seg}</div>`;
           }
           const words = seg.split(/\s+/);
           const htmlWords = words.map((w, wIdx) =>
-            wIdx === activeWordIdx ? `<span class="word-active">${w}</span>` : w
+            wIdx === activeWordIdx
+              ? `<span class="word-active">${w}</span>`
+              : wIdx < activeWordIdx
+              ? `<span class="word-spoken">${w}</span>`
+              : w
           ).join(' ');
           return `<div class="lyric-line active" id="activeLyricLine" onclick="jumpToSegment(${idx})">${htmlWords}</div>`;
         }).join('');
-        const activeEl = document.getElementById('activeLyricLine');
-        if (activeEl) activeEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
       }
     }
 
+    function scrollActiveLineIntoView() {
+      const activeEl = document.getElementById('activeLyricLine');
+      if (activeEl) activeEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+
+    function updateMediaSessionMetadata() {
+      if (!('mediaSession' in navigator)) return;
+      const album = albums[activeAlbumIdx];
+      const chapter = album?.chapters[activeChapterIdx];
+      if (!album || !chapter) return;
+
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: chapter.title,
+        artist: album.title,
+        album: `Sentence ${activeSegIdx + 1} of ${chapter.segments.length}`
+      });
+      navigator.mediaSession.playbackState = isPlaying ? 'playing' : 'paused';
+
+      navigator.mediaSession.setActionHandler('play', () => { if (!isPlaying) startSpeech(); });
+      navigator.mediaSession.setActionHandler('pause', () => { if (isPlaying) togglePlay(); });
+      navigator.mediaSession.setActionHandler('previoustrack', () => prevSegment());
+      navigator.mediaSession.setActionHandler('nexttrack', () => nextSegment());
+      navigator.mediaSession.setActionHandler('seekbackward', () => seekRelative(-2));
+      navigator.mediaSession.setActionHandler('seekforward', () => seekRelative(2));
+    }
+
     function selectAlbum(idx) {
+      if (albums[activeAlbumIdx]) {
+        albums[activeAlbumIdx].lastChapterIdx = activeChapterIdx;
+        albums[activeAlbumIdx].lastSegIdx = activeSegIdx;
+      }
       activeAlbumIdx = idx;
-      activeChapterIdx = 0;
-      activeSegIdx = 0;
+      activeChapterIdx = albums[idx].lastChapterIdx || 0;
+      activeSegIdx = albums[idx].lastSegIdx || 0;
+      saveStateToStorage();
       renderAll();
-      if (isPlaying) startSpeech();
+      startSpeech();
     }
 
     function selectChapter(idx) {
       activeChapterIdx = idx;
       activeSegIdx = 0;
+      saveStateToStorage();
       setMode('lyrics');
       startSpeech();
     }
 
     function jumpToSegment(idx) {
       activeSegIdx = idx;
+      saveStateToStorage();
       startSpeech();
+    }
+
+    function onScrubberInput(val) {
+      const chapter = albums[activeAlbumIdx]?.chapters[activeChapterIdx];
+      if (!chapter) return;
+      document.getElementById('segCounterPill').textContent = `${Number(val) + 1} / ${chapter.segments.length}`;
+    }
+
+    function onScrubberChange(val) {
+      activeSegIdx = Number(val);
+      saveStateToStorage();
+      startSpeech();
+    }
+
+    function seekRelative(delta) {
+      const chapter = albums[activeAlbumIdx]?.chapters[activeChapterIdx];
+      if (!chapter) return;
+      activeSegIdx = Math.max(0, Math.min(chapter.segments.length - 1, activeSegIdx + delta));
+      saveStateToStorage();
+      if (isPlaying) startSpeech(); else renderAll();
     }
 
     function cycleSpeed() {
       speedIdx = (speedIdx + 1) % speeds.length;
+      saveStateToStorage();
       document.getElementById('speedBtn').textContent = speeds[speedIdx] + 'x';
       if (isPlaying) startSpeech();
     }
@@ -443,9 +976,12 @@
     function togglePlay() {
       if (isPlaying) {
         isPlaying = false;
+        currentUtteranceId++;
         window.speechSynthesis?.cancel();
         clearInterval(wordTimer);
-        renderViewport();
+        saveStateToStorage();
+        updateMediaSessionMetadata();
+        renderAll();
       } else {
         startSpeech();
       }
@@ -453,43 +989,56 @@
 
     function startSpeech() {
       isPlaying = true;
+      const mySessionId = ++currentUtteranceId;
       window.speechSynthesis?.cancel();
       clearInterval(wordTimer);
 
       const album = albums[activeAlbumIdx];
       const chapter = album.chapters[activeChapterIdx];
-      const text = chapter.segments[activeSegIdx] || "";
-      const words = text.split(/\s+/);
+      const rawText = chapter.segments[activeSegIdx] || "";
+      const cleanText = sanitizeTextForSpeech(rawText);
+      const words = rawText.split(/\s+/);
       activeWordIdx = 0;
-      renderViewport();
+      saveStateToStorage();
+      updateMediaSessionMetadata();
+      renderAll();
+      scrollActiveLineIntoView();
 
-      const utter = new SpeechSynthesisUtterance(text);
+      const utter = new SpeechSynthesisUtterance(cleanText);
       utter.rate = speeds[speedIdx];
       const chosenVoiceName = document.getElementById('voiceSelect').value;
-      if (chosenVoiceName) {
+      if (chosenVoiceName && window.speechSynthesis) {
         const found = window.speechSynthesis.getVoices().find(v => v.name === chosenVoiceName);
         if (found) utter.voice = found;
       }
 
-      const estMsPerWord = Math.max(140, (360 / speeds[speedIdx]));
+      const estMsPerWord = Math.max(130, (350 / speeds[speedIdx]));
       wordTimer = setInterval(() => {
+        if (mySessionId !== currentUtteranceId) return;
         if (activeWordIdx < words.length - 1) {
           activeWordIdx++;
           renderViewport();
         }
       }, estMsPerWord);
 
-      utter.onBoundary = (e) => {
-        if (e.name === 'word') {
-          const prefix = text.slice(0, e.charIndex);
+      utter.onboundary = (e) => {
+        if (mySessionId !== currentUtteranceId) return;
+        if (e.name === 'word' && typeof e.charIndex === 'number') {
+          const prefix = cleanText.slice(0, e.charIndex);
           activeWordIdx = Math.max(0, prefix.trim().split(/\s+/).filter(Boolean).length);
           renderViewport();
         }
       };
 
       utter.onend = () => {
+        if (mySessionId !== currentUtteranceId) return;
         clearInterval(wordTimer);
         if (isPlaying) nextSegment();
+      };
+
+      utter.onerror = () => {
+        if (mySessionId !== currentUtteranceId) return;
+        clearInterval(wordTimer);
       };
 
       window.speechSynthesis?.speak(utter);
@@ -500,26 +1049,35 @@
       const chapter = album.chapters[activeChapterIdx];
       if (activeSegIdx + 1 < chapter.segments.length) {
         activeSegIdx++;
-        if (isPlaying) startSpeech(); else renderViewport();
+        saveStateToStorage();
+        if (isPlaying) startSpeech(); else renderAll();
       } else if (activeChapterIdx + 1 < album.chapters.length) {
         activeChapterIdx++;
         activeSegIdx = 0;
-        if (isPlaying) startSpeech(); else renderViewport();
+        saveStateToStorage();
+        if (isPlaying) startSpeech(); else renderAll();
       } else {
         isPlaying = false;
-        renderViewport();
+        currentUtteranceId++;
+        saveStateToStorage();
+        updateMediaSessionMetadata();
+        renderAll();
       }
     }
 
     function prevSegment() {
-      if (activeSegIdx > 0) activeSegIdx--;
-      else if (activeChapterIdx > 0) {
+      if (activeSegIdx > 0) {
+        activeSegIdx--;
+      } else if (activeChapterIdx > 0) {
         activeChapterIdx--;
-        activeSegIdx = 0;
+        const prevChap = albums[activeAlbumIdx].chapters[activeChapterIdx];
+        activeSegIdx = Math.max(0, prevChap.segments.length - 1);
       }
-      if (isPlaying) startSpeech(); else renderViewport();
+      saveStateToStorage();
+      if (isPlaying) startSpeech(); else renderAll();
     }
 
+    loadStateFromStorage();
     renderAll();
   </script>
 </body>
