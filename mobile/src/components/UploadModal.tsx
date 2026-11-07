@@ -4,13 +4,15 @@ import React, { useState } from 'react';
 import {
   ActivityIndicator,
   Modal,
+  Platform,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
-import { createAlbumFromRawText, parseDocumentToAlbum } from '../services/documentParser';
+import { createAlbumFromRawTextAsync, parseDocumentToAlbum } from '../services/documentParser';
+import { yieldToMainThread } from '../services/textCleaner';
 import { usePlayerStore } from '../store/usePlayerStore';
 
 interface UploadModalProps {
@@ -19,7 +21,11 @@ interface UploadModalProps {
 }
 
 export const UploadModal: React.FC<UploadModalProps> = ({ visible, onClose }) => {
-  const { ttsConfig, addAlbum, playAlbum, setFullPlayerOpen } = usePlayerStore();
+  const ttsConfig = usePlayerStore((s) => s.ttsConfig);
+  const addAlbum = usePlayerStore((s) => s.addAlbum);
+  const playAlbum = usePlayerStore((s) => s.playAlbum);
+  const setFullPlayerOpen = usePlayerStore((s) => s.setFullPlayerOpen);
+
   const [isParsing, setIsParsing] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [pasteMode, setPasteMode] = useState(false);
@@ -36,7 +42,7 @@ export const UploadModal: React.FC<UploadModalProps> = ({ visible, onClose }) =>
           'text/plain',
           'text/markdown',
         ],
-        copyToCacheDirectory: true,
+        copyToCacheDirectory: Platform.OS !== 'android',
       });
 
       if (result.canceled || !result.assets || result.assets.length === 0) {
@@ -45,6 +51,9 @@ export const UploadModal: React.FC<UploadModalProps> = ({ visible, onClose }) =>
 
       const asset = result.assets[0];
       setIsParsing(true);
+      // Let the loading spinner render on screen before starting extraction
+      await yieldToMainThread();
+
       const album = await parseDocumentToAlbum(
         asset.uri,
         asset.name || 'Uploaded Document.pdf',
@@ -63,14 +72,23 @@ export const UploadModal: React.FC<UploadModalProps> = ({ visible, onClose }) =>
     }
   };
 
-  const handleCreateFromPaste = () => {
+  const handleCreateFromPaste = async () => {
     if (!customText.trim()) {
       setErrorMsg('Please paste some text or article paragraphs first.');
       return;
     }
+    setIsParsing(true);
+    await yieldToMainThread();
     const title = customTitle.trim() || 'Custom Audio Note';
-    const album = createAlbumFromRawText(title, 'Direct Text Import', 'txt', customText, ttsConfig);
+    const album = await createAlbumFromRawTextAsync(
+      title,
+      'Direct Text Import',
+      'txt',
+      customText,
+      ttsConfig
+    );
     addAlbum(album);
+    setIsParsing(false);
     setCustomTitle('');
     setCustomText('');
     setPasteMode(false);
@@ -162,9 +180,12 @@ export const UploadModal: React.FC<UploadModalProps> = ({ visible, onClose }) =>
                 <TouchableOpacity
                   style={styles.convertBtn}
                   onPress={handleCreateFromPaste}
+                  disabled={isParsing}
                 >
                   <Ionicons name="play" size={16} color="#000" />
-                  <Text style={styles.convertBtnText}>Convert & Play Now</Text>
+                  <Text style={styles.convertBtnText}>
+                    {isParsing ? 'Converting...' : 'Convert & Play Now'}
+                  </Text>
                 </TouchableOpacity>
               </View>
             </View>

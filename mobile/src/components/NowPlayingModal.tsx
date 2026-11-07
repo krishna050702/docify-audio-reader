@@ -1,7 +1,10 @@
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { memo, useCallback, useEffect, useRef, useState } from 'react';
 import {
+  FlatList,
+  GestureResponderEvent,
+  LayoutChangeEvent,
   Modal,
   ScrollView,
   StyleSheet,
@@ -10,54 +13,138 @@ import {
   View,
 } from 'react-native';
 import { DEFAULT_VOICE_CATALOG, discoverDeviceNeuralVoices } from '../services/onDeviceNeuralTts';
+import { getSegmentWords } from '../services/textCleaner';
 import { usePlayerStore } from '../store/usePlayerStore';
-import { TTSVoiceOption } from '../types';
+import { ChapterTrack, LyricSegment, TTSVoiceOption } from '../types';
 
 const SPEED_OPTIONS = [0.8, 1.0, 1.25, 1.5, 1.75, 2.0, 2.5];
 
+function formatSeconds(sec: number): string {
+  const s = Math.max(0, Math.round(sec));
+  const mins = Math.floor(s / 60);
+  const rem = s % 60;
+  return `${mins}:${rem < 10 ? '0' : ''}${rem}`;
+}
+
+const ActiveLyricWords: React.FC<{ segment: LyricSegment }> = ({ segment }) => {
+  const activeWordIndex = usePlayerStore((s) => s.activeWordIndex);
+  const words = getSegmentWords(segment);
+
+  return (
+    <Text style={[styles.lyricSentence, styles.lyricSentenceActive]}>
+      {words.map((w, wIdx) => (
+        <Text
+          key={`${segment.id}-w-${wIdx}`}
+          style={
+            wIdx === activeWordIndex
+              ? styles.activeWordHighlight
+              : wIdx < activeWordIndex
+              ? styles.spokenWordInCurrent
+              : undefined
+          }
+        >
+          {w.word}{' '}
+        </Text>
+      ))}
+    </Text>
+  );
+};
+
+interface LyricRowProps {
+  segment: LyricSegment;
+  index: number;
+  isCurrentSeg: boolean;
+  isPastSeg: boolean;
+  onPressSegment: (idx: number) => void;
+}
+
+const LyricSegmentRow = memo<LyricRowProps>(
+  ({ segment, index, isCurrentSeg, isPastSeg, onPressSegment }) => {
+    return (
+      <TouchableOpacity
+        activeOpacity={0.75}
+        onPress={() => onPressSegment(index)}
+        style={[styles.lyricSegmentBox, isCurrentSeg && styles.lyricSegmentBoxActive]}
+      >
+        {isCurrentSeg ? (
+          <ActiveLyricWords segment={segment} />
+        ) : (
+          <Text style={[styles.lyricSentence, isPastSeg && styles.lyricSentencePast]}>
+            {segment.text}
+          </Text>
+        )}
+      </TouchableOpacity>
+    );
+  },
+  (prev, next) =>
+    prev.segment.id === next.segment.id &&
+    prev.isCurrentSeg === next.isCurrentSeg &&
+    prev.isPastSeg === next.isPastSeg
+);
+
 export const NowPlayingModal: React.FC = () => {
-  const {
-    albums,
-    activeAlbumId,
-    activeChapterIndex,
-    activeSegmentIndex,
-    activeWordIndex,
-    isPlaying,
-    isFullPlayerOpen,
-    ttsConfig,
-    togglePlayPause,
-    skipNextSegment,
-    skipPrevSegment,
-    skipToChapter,
-    seekToSegment,
-    setPlaybackSpeed,
-    setEngineMode,
-    setFullPlayerOpen,
-    addBookmarkFromCurrent,
-  } = usePlayerStore();
+  const isFullPlayerOpen = usePlayerStore((s) => s.isFullPlayerOpen);
+  const albums = usePlayerStore((s) => s.albums);
+  const activeAlbumId = usePlayerStore((s) => s.activeAlbumId);
+  const activeChapterIndex = usePlayerStore((s) => s.activeChapterIndex);
+  const activeSegmentIndex = usePlayerStore((s) => s.activeSegmentIndex);
+  const isPlaying = usePlayerStore((s) => s.isPlaying);
+  const ttsConfig = usePlayerStore((s) => s.ttsConfig);
+
+  const togglePlayPause = usePlayerStore((s) => s.togglePlayPause);
+  const skipNextSegment = usePlayerStore((s) => s.skipNextSegment);
+  const skipPrevSegment = usePlayerStore((s) => s.skipPrevSegment);
+  const skipToChapter = usePlayerStore((s) => s.skipToChapter);
+  const seekToSegment = usePlayerStore((s) => s.seekToSegment);
+  const setPlaybackSpeed = usePlayerStore((s) => s.setPlaybackSpeed);
+  const setEngineMode = usePlayerStore((s) => s.setEngineMode);
+  const setFullPlayerOpen = usePlayerStore((s) => s.setFullPlayerOpen);
+  const addBookmarkFromCurrent = usePlayerStore((s) => s.addBookmarkFromCurrent);
 
   const [viewMode, setViewMode] = useState<'lyrics' | 'chapters' | 'voices'>('lyrics');
   const [bookmarkToast, setBookmarkToast] = useState<string | null>(null);
   const [deviceVoices, setDeviceVoices] = useState<TTSVoiceOption[]>([]);
-  const scrollRef = useRef<ScrollView>(null);
+  const [scrubberWidth, setScrubberWidth] = useState<number>(300);
+  const [dragRatio, setDragRatio] = useState<number | null>(null);
+  const lyricsListRef = useRef<FlatList<LyricSegment>>(null);
 
   useEffect(() => {
-    discoverDeviceNeuralVoices().then(setDeviceVoices);
-  }, []);
+    if (isFullPlayerOpen && deviceVoices.length === 0) {
+      discoverDeviceNeuralVoices().then(setDeviceVoices);
+    }
+  }, [isFullPlayerOpen, deviceVoices.length]);
 
   const activeAlbum = albums.find((a) => a.id === activeAlbumId) || albums[0];
-  if (!activeAlbum) return null;
-
-  const activeChapter = activeAlbum.chapters[activeChapterIndex] || activeAlbum.chapters[0];
+  const activeChapter = activeAlbum?.chapters[activeChapterIndex] || activeAlbum?.chapters[0];
   const segments = activeChapter?.segments || [];
 
-  // Auto-scroll Spotify Lyrics view when activeSegmentIndex changes
   useEffect(() => {
-    if (viewMode === 'lyrics' && scrollRef.current) {
-      const approxY = Math.max(0, activeSegmentIndex * 92 - 90);
-      scrollRef.current.scrollTo({ y: approxY, animated: true });
+    if (
+      isFullPlayerOpen &&
+      viewMode === 'lyrics' &&
+      lyricsListRef.current &&
+      segments.length > 0 &&
+      activeSegmentIndex >= 0 &&
+      activeSegmentIndex < segments.length
+    ) {
+      try {
+        lyricsListRef.current.scrollToIndex({
+          index: activeSegmentIndex,
+          animated: true,
+          viewPosition: 0.25,
+        });
+      } catch {}
     }
-  }, [activeSegmentIndex, viewMode]);
+  }, [activeSegmentIndex, viewMode, isFullPlayerOpen, segments.length]);
+
+  const handlePressSegment = useCallback(
+    (idx: number) => {
+      seekToSegment(idx);
+    },
+    [seekToSegment]
+  );
+
+  if (!isFullPlayerOpen || !activeAlbum) return null;
 
   const handleBookmark = () => {
     const saved = addBookmarkFromCurrent();
@@ -67,7 +154,99 @@ export const NowPlayingModal: React.FC = () => {
     }
   };
 
+  // Interactive slide / scrubber bar handlers
+  const handleScrubberLayout = (e: LayoutChangeEvent) => {
+    const w = e.nativeEvent.layout.width;
+    if (w > 0) setScrubberWidth(w);
+  };
+
+  const computeRatioFromTouch = (e: GestureResponderEvent): number => {
+    const x = e.nativeEvent.locationX;
+    return Math.max(0, Math.min(1, x / Math.max(1, scrubberWidth)));
+  };
+
+  const handleScrubberStart = (e: GestureResponderEvent) => {
+    setDragRatio(computeRatioFromTouch(e));
+  };
+
+  const handleScrubberMove = (e: GestureResponderEvent) => {
+    setDragRatio(computeRatioFromTouch(e));
+  };
+
+  const handleScrubberRelease = (e: GestureResponderEvent) => {
+    const ratio = dragRatio !== null ? dragRatio : computeRatioFromTouch(e);
+    setDragRatio(null);
+    if (segments.length > 0) {
+      const targetIdx = Math.min(
+        segments.length - 1,
+        Math.max(0, Math.floor(ratio * segments.length))
+      );
+      seekToSegment(targetIdx);
+    }
+  };
+
+  const currentRatio =
+    dragRatio !== null
+      ? dragRatio
+      : segments.length > 1
+      ? activeSegmentIndex / (segments.length - 1)
+      : segments.length === 1
+      ? 1
+      : 0;
+
+  const progressPercent = Math.min(100, Math.max(0, Math.round(currentRatio * 100)));
+  const currentSeg = segments[activeSegmentIndex];
+  const elapsedChapterSec = currentSeg?.startTimeOffsetSec || 0;
+  const totalChapterSec = activeChapter?.estimatedDurationSec || 1;
+
   const allVoiceOptions = [...DEFAULT_VOICE_CATALOG, ...deviceVoices];
+
+  const renderLyricItem = ({ item, index }: { item: LyricSegment; index: number }) => (
+    <LyricSegmentRow
+      segment={item}
+      index={index}
+      isCurrentSeg={index === activeSegmentIndex}
+      isPastSeg={index < activeSegmentIndex}
+      onPressSegment={handlePressSegment}
+    />
+  );
+
+  const renderChapterItem = ({ item: ch, index: cIdx }: { item: ChapterTrack; index: number }) => {
+    const isCurrent = cIdx === activeChapterIndex;
+    return (
+      <TouchableOpacity
+        onPress={() => {
+          skipToChapter(cIdx);
+          setViewMode('lyrics');
+        }}
+        style={[styles.chapterRow, isCurrent && styles.chapterRowActive]}
+      >
+        <View style={styles.chapterNumCol}>
+          {isCurrent ? (
+            <Ionicons name="volume-high" size={18} color="#1DB954" />
+          ) : (
+            <Text style={styles.chapterNumText}>{cIdx + 1}</Text>
+          )}
+        </View>
+        <View style={styles.chapterInfoCol}>
+          <Text
+            style={[styles.chapterTitle, isCurrent && { color: '#1DB954' }]}
+            numberOfLines={1}
+          >
+            {ch.title}
+          </Text>
+          <Text style={styles.chapterSub}>
+            {ch.wordCount} words • ~{Math.max(1, Math.round(ch.estimatedDurationSec / 60))} min
+          </Text>
+        </View>
+        {ch.isSummaryTrack && (
+          <View style={styles.summaryBadge}>
+            <Text style={styles.summaryBadgeText}>AI TL;DR</Text>
+          </View>
+        )}
+      </TouchableOpacity>
+    );
+  };
 
   return (
     <Modal
@@ -156,98 +335,42 @@ export const NowPlayingModal: React.FC = () => {
         {/* Main Content Viewport */}
         <View style={styles.viewportCard}>
           {viewMode === 'lyrics' && (
-            <ScrollView
-              ref={scrollRef}
+            <FlatList
+              ref={lyricsListRef}
+              data={segments}
+              keyExtractor={(item) => item.id}
+              renderItem={renderLyricItem}
               contentContainerStyle={styles.lyricsScrollContent}
               showsVerticalScrollIndicator={false}
-            >
-              <Text style={styles.lyricsHint}>
-                Tap any sentence to jump audio • Synced Word-by-Word
-              </Text>
-              {segments.map((seg, idx) => {
-                const isCurrentSeg = idx === activeSegmentIndex;
-                const isPastSeg = idx < activeSegmentIndex;
-
-                return (
-                  <TouchableOpacity
-                    key={seg.id}
-                    activeOpacity={0.75}
-                    onPress={() => seekToSegment(idx)}
-                    style={[
-                      styles.lyricSegmentBox,
-                      isCurrentSeg && styles.lyricSegmentBoxActive,
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.lyricSentence,
-                        isPastSeg && styles.lyricSentencePast,
-                        isCurrentSeg && styles.lyricSentenceActive,
-                      ]}
-                    >
-                      {isCurrentSeg
-                        ? seg.words.map((w, wIdx) => (
-                            <Text
-                              key={`${seg.id}-w-${wIdx}`}
-                              style={
-                                wIdx === activeWordIndex
-                                  ? styles.activeWordHighlight
-                                  : wIdx < activeWordIndex
-                                  ? styles.spokenWordInCurrent
-                                  : undefined
-                              }
-                            >
-                              {w.word}{' '}
-                            </Text>
-                          ))
-                        : seg.text}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </ScrollView>
+              initialNumToRender={12}
+              maxToRenderPerBatch={10}
+              windowSize={5}
+              removeClippedSubviews
+              onScrollToIndexFailed={(info) => {
+                lyricsListRef.current?.scrollToOffset({
+                  offset: info.averageItemLength * info.index,
+                  animated: true,
+                });
+              }}
+              ListHeaderComponent={
+                <Text style={styles.lyricsHint}>
+                  Tap any sentence or drag the slide bar below to seek audio
+                </Text>
+              }
+            />
           )}
 
           {viewMode === 'chapters' && (
-            <ScrollView contentContainerStyle={styles.chaptersScrollContent}>
-              {activeAlbum.chapters.map((ch, cIdx) => {
-                const isCurrent = cIdx === activeChapterIndex;
-                return (
-                  <TouchableOpacity
-                    key={ch.id}
-                    onPress={() => {
-                      skipToChapter(cIdx);
-                      setViewMode('lyrics');
-                    }}
-                    style={[styles.chapterRow, isCurrent && styles.chapterRowActive]}
-                  >
-                    <View style={styles.chapterNumCol}>
-                      {isCurrent ? (
-                        <Ionicons name="volume-high" size={18} color="#1DB954" />
-                      ) : (
-                        <Text style={styles.chapterNumText}>{cIdx + 1}</Text>
-                      )}
-                    </View>
-                    <View style={styles.chapterInfoCol}>
-                      <Text
-                        style={[styles.chapterTitle, isCurrent && { color: '#1DB954' }]}
-                        numberOfLines={1}
-                      >
-                        {ch.title}
-                      </Text>
-                      <Text style={styles.chapterSub}>
-                        {ch.wordCount} words • ~{Math.max(1, Math.round(ch.estimatedDurationSec / 60))} min
-                      </Text>
-                    </View>
-                    {ch.isSummaryTrack && (
-                      <View style={styles.summaryBadge}>
-                        <Text style={styles.summaryBadgeText}>AI TL;DR</Text>
-                      </View>
-                    )}
-                  </TouchableOpacity>
-                );
-              })}
-            </ScrollView>
+            <FlatList
+              data={activeAlbum.chapters}
+              keyExtractor={(item) => item.id}
+              renderItem={renderChapterItem}
+              contentContainerStyle={styles.chaptersScrollContent}
+              initialNumToRender={15}
+              maxToRenderPerBatch={12}
+              windowSize={5}
+              removeClippedSubviews
+            />
           )}
 
           {viewMode === 'voices' && (
@@ -287,13 +410,13 @@ export const NowPlayingModal: React.FC = () => {
 
         {/* Track Title & Engine Status Bar */}
         <View style={styles.trackMetaSection}>
-          <View style={{ flex: 1 }}>
+          <View style={{ flex: 1, paddingRight: 8 }}>
             <Text style={styles.nowPlayingTrackTitle} numberOfLines={1}>
               {activeChapter?.title}
             </Text>
             <Text style={styles.nowPlayingEngineSub}>
               {ttsConfig.engineMode === 'on-device-neural'
-                ? '⚡ On-Device Neural TTS (Offline Ready)'
+                ? '⚡ On-Device Neural TTS • Background Ready'
                 : ttsConfig.engineMode === 'backend-neural'
                 ? '☁️ Neural Studio Stream (Word Synced)'
                 : `🎙️ ${ttsConfig.engineMode.toUpperCase()}`}
@@ -301,25 +424,38 @@ export const NowPlayingModal: React.FC = () => {
           </View>
           <View style={styles.segmentCounterPill}>
             <Text style={styles.segmentCounterText}>
-              {activeSegmentIndex + 1} / { Math.max(1, segments.length) }
+              {activeSegmentIndex + 1} / {Math.max(1, segments.length)}
             </Text>
           </View>
         </View>
 
-        {/* Scrubber Progress Bar */}
-        <View style={styles.scrubberWrap}>
-          <View style={styles.scrubberTrack}>
+        {/* Interactive Scrubber / Slide Bar */}
+        <View style={styles.scrubberContainer}>
+          <View
+            style={styles.scrubberHitArea}
+            onLayout={handleScrubberLayout}
+            onStartShouldSetResponder={() => true}
+            onMoveShouldSetResponder={() => true}
+            onResponderGrant={handleScrubberStart}
+            onResponderMove={handleScrubberMove}
+            onResponderRelease={handleScrubberRelease}
+          >
+            <View style={styles.scrubberTrack}>
+              <View style={[styles.scrubberFill, { width: `${progressPercent}%` }]} />
+            </View>
             <View
               style={[
-                styles.scrubberFill,
-                {
-                  width: `${Math.min(
-                    100,
-                    Math.round(((activeSegmentIndex + 1) / Math.max(1, segments.length)) * 100)
-                  )}%`,
-                },
+                styles.scrubberThumb,
+                { left: `${progressPercent}%` },
               ]}
             />
+          </View>
+          <View style={styles.scrubberTimeRow}>
+            <Text style={styles.scrubberTimeText}>{formatSeconds(elapsedChapterSec)}</Text>
+            <Text style={styles.scrubberTimeText}>
+              Track {activeChapterIndex + 1} of {activeAlbum.chapters.length}
+            </Text>
+            <Text style={styles.scrubberTimeText}>{formatSeconds(totalChapterSec)}</Text>
           </View>
         </View>
 
@@ -336,7 +472,19 @@ export const NowPlayingModal: React.FC = () => {
             <Text style={styles.speedPillText}>{ttsConfig.playbackSpeed}x</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity onPress={skipPrevSegment} style={styles.transportBtn}>
+          <TouchableOpacity
+            onPress={() => seekToSegment(Math.max(0, activeSegmentIndex - 3))}
+            style={styles.transportBtn}
+            accessibilityLabel="Rewind 3 sentences"
+          >
+            <Ionicons name="play-back" size={24} color="#B3B3B3" />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            onPress={skipPrevSegment}
+            style={styles.transportBtn}
+            accessibilityLabel="Previous Sentence"
+          >
             <Ionicons name="play-skip-back" size={30} color="#FFFFFF" />
           </TouchableOpacity>
 
@@ -344,17 +492,34 @@ export const NowPlayingModal: React.FC = () => {
             <Ionicons name={isPlaying ? 'pause' : 'play'} size={34} color="#000000" />
           </TouchableOpacity>
 
-          <TouchableOpacity onPress={skipNextSegment} style={styles.transportBtn}>
+          <TouchableOpacity
+            onPress={skipNextSegment}
+            style={styles.transportBtn}
+            accessibilityLabel="Next Sentence"
+          >
             <Ionicons name="play-skip-forward" size={30} color="#FFFFFF" />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            onPress={() =>
+              seekToSegment(Math.min(Math.max(0, segments.length - 1), activeSegmentIndex + 3))
+            }
+            style={styles.transportBtn}
+            accessibilityLabel="Forward 3 sentences"
+          >
+            <Ionicons name="play-forward" size={24} color="#B3B3B3" />
           </TouchableOpacity>
 
           <TouchableOpacity
             onPress={() => {
               if (activeChapterIndex + 1 < activeAlbum.chapters.length) {
                 skipToChapter(activeChapterIndex + 1);
+              } else if (activeAlbum.chapters.length > 0) {
+                skipToChapter(0);
               }
             }}
             style={styles.speedPill}
+            accessibilityLabel="Next Chapter"
           >
             <Ionicons name="albums-outline" size={18} color="#FFFFFF" />
           </TouchableOpacity>
@@ -369,7 +534,7 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingTop: 44,
     paddingHorizontal: 18,
-    paddingBottom: 28,
+    paddingBottom: 24,
   },
   headerRow: {
     flexDirection: 'row',
@@ -448,7 +613,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.1)',
     overflow: 'hidden',
-    marginBottom: 16,
+    marginBottom: 14,
   },
   lyricsScrollContent: {
     padding: 18,
@@ -569,18 +734,18 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 12,
+    marginBottom: 6,
   },
   nowPlayingTrackTitle: {
     color: '#FFFFFF',
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: '800',
   },
   nowPlayingEngineSub: {
     color: '#1DB954',
-    fontSize: 12,
+    fontSize: 11.5,
     fontWeight: '600',
-    marginTop: 3,
+    marginTop: 2,
   },
   segmentCounterPill: {
     backgroundColor: 'rgba(255,255,255,0.1)',
@@ -593,12 +758,17 @@ const styles = StyleSheet.create({
     fontSize: 11.5,
     fontWeight: '700',
   },
-  scrubberWrap: {
-    marginBottom: 18,
+  scrubberContainer: {
+    marginBottom: 14,
+  },
+  scrubberHitArea: {
+    height: 28,
+    justifyContent: 'center',
+    position: 'relative',
   },
   scrubberTrack: {
-    height: 5,
-    backgroundColor: 'rgba(255,255,255,0.18)',
+    height: 6,
+    backgroundColor: 'rgba(255,255,255,0.2)',
     borderRadius: 3,
     overflow: 'hidden',
   },
@@ -606,32 +776,54 @@ const styles = StyleSheet.create({
     height: '100%',
     backgroundColor: '#1DB954',
   },
+  scrubberThumb: {
+    position: 'absolute',
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: '#1DB954',
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+    marginLeft: -8,
+    top: 6,
+    elevation: 4,
+  },
+  scrubberTimeRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 2,
+  },
+  scrubberTimeText: {
+    color: '#9CA3AF',
+    fontSize: 11,
+    fontWeight: '600',
+  },
   controlsRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 8,
+    paddingHorizontal: 2,
   },
   speedPill: {
     backgroundColor: 'rgba(255,255,255,0.12)',
-    paddingHorizontal: 12,
+    paddingHorizontal: 10,
     paddingVertical: 8,
     borderRadius: 18,
-    minWidth: 54,
+    minWidth: 48,
     alignItems: 'center',
   },
   speedPillText: {
     color: '#FFFFFF',
     fontWeight: '800',
-    fontSize: 13,
+    fontSize: 12.5,
   },
   transportBtn: {
-    padding: 10,
+    padding: 8,
   },
   bigPlayCircle: {
-    width: 68,
-    height: 68,
-    borderRadius: 34,
+    width: 64,
+    height: 64,
+    borderRadius: 32,
     backgroundColor: '#1DB954',
     alignItems: 'center',
     justifyContent: 'center',

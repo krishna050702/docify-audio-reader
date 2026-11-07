@@ -2,43 +2,50 @@ import * as Speech from 'expo-speech';
 import { TTSVoiceOption } from '../types';
 
 /**
- * Curated list of On-Device Neural (Kokoro-82M ONNX / OS Enhanced Neural) and Cloud Neural voices.
+ * Curated list of Neural Voice Personas (Android WaveNet Network Neural / iOS Enhanced / Kokoro / Cloud Studio).
  */
 export const DEFAULT_VOICE_CATALOG: TTSVoiceOption[] = [
   {
     id: 'kokoro-af_heart',
-    name: 'Heart (Kokoro-82M Neural • Warm Female)',
+    name: 'Heart • Warm Audiobook Female',
     language: 'en-US',
     engine: 'on-device-neural',
-    badge: 'ON-DEVICE NEURAL',
+    badge: 'NEURAL WARM FEMALE',
   },
   {
     id: 'kokoro-am_adam',
-    name: 'Adam (Kokoro-82M Neural • Deep Narrator)',
+    name: 'Adam • Deep Podcast Narrator (Male)',
     language: 'en-US',
     engine: 'on-device-neural',
-    badge: 'ON-DEVICE NEURAL',
+    badge: 'NEURAL DEEP MALE',
   },
   {
     id: 'kokoro-bf_emma',
-    name: 'Emma (Kokoro-82M Neural • British Studio)',
+    name: 'Emma • British Studio Narrator',
     language: 'en-GB',
     engine: 'on-device-neural',
-    badge: 'ON-DEVICE NEURAL',
+    badge: 'BRITISH NEURAL',
+  },
+  {
+    id: 'kokoro-in_neerja',
+    name: 'Neerja • Clear Indian English Narrator',
+    language: 'en-IN',
+    engine: 'on-device-neural',
+    badge: 'INDIAN NEURAL',
   },
   {
     id: 'backend-en-US-AvaMultilingualNeural',
     name: 'Ava Multilingual (Edge Studio Neural)',
     language: 'en-US',
     engine: 'backend-neural',
-    badge: 'FREE CLOUD NEURAL',
+    badge: 'STUDIO CLOUD NEURAL',
   },
   {
     id: 'backend-en-US-AndrewMultilingualNeural',
     name: 'Andrew Podcast Host (Edge Studio Neural)',
     language: 'en-US',
     engine: 'backend-neural',
-    badge: 'FREE CLOUD NEURAL',
+    badge: 'STUDIO CLOUD NEURAL',
   },
   {
     id: 'openai-alloy',
@@ -63,95 +70,149 @@ export const DEFAULT_VOICE_CATALOG: TTSVoiceOption[] = [
   },
 ];
 
-/**
- * Queries the device OS (iOS AVSpeechSynthesizer / Android Google TTS) and prioritizes Enhanced/Neural voices.
- */
-export async function discoverDeviceNeuralVoices(): Promise<TTSVoiceOption[]> {
+let cachedSystemVoices: Speech.Voice[] | null = null;
+
+async function getSystemVoices(): Promise<Speech.Voice[]> {
+  if (cachedSystemVoices && cachedSystemVoices.length > 0) {
+    return cachedSystemVoices;
+  }
   try {
-    const rawVoices = await Speech.getAvailableVoicesAsync();
-    const englishVoices = rawVoices.filter((v) => v.language?.toLowerCase().startsWith('en'));
-
-    // Sort Enhanced / Siri / Premium / Network Neural voices to the top
-    englishVoices.sort((a, b) => {
-      const score = (v: Speech.Voice) => {
-        const id = (v.identifier || '').toLowerCase();
-        const name = (v.name || '').toLowerCase();
-        if (v.quality === Speech.VoiceQuality.Enhanced) return 3;
-        if (id.includes('premium') || id.includes('enhanced') || id.includes('siri') || id.includes('network')) return 2;
-        if (name.includes('natural') || name.includes('neural')) return 2;
-        return 1;
-      };
-      return score(b) - score(a);
-    });
-
-    return englishVoices.slice(0, 8).map((v) => ({
-      id: v.identifier,
-      name: `${v.name} (${v.language})`,
-      language: v.language,
-      engine: 'os-native',
-      badge: v.quality === Speech.VoiceQuality.Enhanced ? 'OS ENHANCED' : 'OFFLINE OS',
-    }));
+    const voices = await Speech.getAvailableVoicesAsync();
+    if (voices && voices.length > 0) {
+      cachedSystemVoices = voices;
+    }
+    return voices || [];
   } catch {
     return [];
   }
 }
 
+function scoreVoiceQuality(v: Speech.Voice): number {
+  const id = (v.identifier || '').toLowerCase();
+  const name = (v.name || '').toLowerCase();
+  let score = 0;
+
+  if (v.quality === Speech.VoiceQuality.Enhanced) score += 50;
+  // Android Google TTS WaveNet/Neural2 voices end with "-network"
+  if (id.includes('-network') || name.includes('network')) score += 45;
+  if (id.includes('neural') || name.includes('neural') || name.includes('natural')) score += 40;
+  if (id.includes('wavenet') || id.includes('premium') || id.includes('enhanced') || id.includes('siri')) {
+    score += 35;
+  }
+  // Prefer high-tier Google TTS voice codes (tpf, sfg, iom, tpd, gba, gbd, end, enc)
+  if (/-(tpf|sfg|iom|tpd|gba|gbd|gbg|rjs|end|enc)-/.test(id)) {
+    score += 20;
+  }
+  if (id.includes('-local')) {
+    score += 5;
+  }
+  return score;
+}
+
 /**
- * Generates the self-contained HTML for the hidden WebView ONNX Worker that runs Kokoro-82M (82M parameter
- * open-weight Neural TTS via Transformers.js / ONNX Runtime Web) directly on-device for offline neural audio.
+ * Resolves a persona or voice ID to the best installed Android WaveNet (`-network`) / iOS Enhanced
+ * native voice identifier, language, and natural prosody adjustments.
  */
-export function getOnDeviceKokoroWorkerHtml(): string {
-  return `<!DOCTYPE html>
-<html>
-<head><meta charset="utf-8" /></head>
-<body>
-<script type="module">
-  import { KokoroTTS } from "https://cdn.jsdelivr.net/npm/kokoro-js@1.1.1/dist/kokoro.web.js";
+export async function resolveBestNativeVoice(
+  selectedVoiceId: string,
+  basePitch: number
+): Promise<{ voice?: string; language: string; pitch: number }> {
+  const voices = await getSystemVoices();
+  const englishVoices = voices.filter((v) => v.language?.toLowerCase().startsWith('en'));
 
-  let ttsModel = null;
-  let isInitializing = false;
-
-  async function initModel() {
-    if (ttsModel || isInitializing) return;
-    isInitializing = true;
-    try {
-      window.ReactNativeWebView?.postMessage(JSON.stringify({ type: 'STATUS', status: 'loading_model' }));
-      ttsModel = await KokoroTTS.from_pretrained("onnx-community/Kokoro-82M-v1.0-ONNX", {
-        dtype: "q8" // 8-bit quantized (~80MB) cached in IndexedDB for 100% offline reuse
-      });
-      window.ReactNativeWebView?.postMessage(JSON.stringify({ type: 'STATUS', status: 'ready' }));
-    } catch (err) {
-      window.ReactNativeWebView?.postMessage(JSON.stringify({ type: 'ERROR', message: String(err) }));
-    } finally {
-      isInitializing = false;
-    }
+  if (englishVoices.length === 0) {
+    return { voice: undefined, language: 'en-US', pitch: basePitch };
   }
 
-  window.synthesizeKokoro = async function(reqId, text, voice) {
-    try {
-      await initModel();
-      if (!ttsModel) throw new Error("Kokoro ONNX model not loaded");
-      const cleanVoice = (voice || "af_heart").replace("kokoro-", "");
-      const audio = await ttsModel.generate(text, { voice: cleanVoice });
-      const wavBlob = audio.toBlob();
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        window.ReactNativeWebView?.postMessage(JSON.stringify({
-          type: 'AUDIO_READY',
-          reqId,
-          base64DataUrl: reader.result
-        }));
-      };
-      reader.readAsDataURL(wavBlob);
-    } catch (err) {
-      window.ReactNativeWebView?.postMessage(JSON.stringify({
-        type: 'SYNTH_FALLBACK',
-        reqId,
-        message: String(err)
-      }));
+  // If the user explicitly picked a discovered OS voice identifier, use it directly
+  const exactMatch = englishVoices.find((v) => v.identifier === selectedVoiceId);
+  if (exactMatch) {
+    return {
+      voice: exactMatch.identifier,
+      language: exactMatch.language || 'en-US',
+      pitch: basePitch,
+    };
+  }
+
+  // Otherwise match the persona (Warm Female, Deep Male, British Studio, Indian English)
+  const wantBritish = selectedVoiceId.includes('bf_') || selectedVoiceId.includes('en-GB');
+  const wantIndian = selectedVoiceId.includes('in_') || selectedVoiceId.includes('en-IN');
+  const wantMale =
+    selectedVoiceId.includes('am_adam') ||
+    selectedVoiceId.includes('Andrew') ||
+    selectedVoiceId.includes('male');
+
+  const targetLangPrefix = wantBritish ? 'en-gb' : wantIndian ? 'en-in' : 'en-us';
+
+  const candidates = englishVoices.slice().sort((a, b) => {
+    const aId = (a.identifier || '').toLowerCase();
+    const bId = (b.identifier || '').toLowerCase();
+    const aLang = (a.language || '').toLowerCase();
+    const bLang = (b.language || '').toLowerCase();
+
+    let aScore = scoreVoiceQuality(a);
+    let bScore = scoreVoiceQuality(b);
+
+    if (aLang.startsWith(targetLangPrefix)) aScore += 30;
+    if (bLang.startsWith(targetLangPrefix)) bScore += 30;
+
+    // Android Google TTS male vs female voice code hints
+    const isMaleVoiceCode = (id: string) =>
+      /-(iom|tpd|tpc|gbd|rjs|end|ene|male)\b/.test(id) || id.includes('daniel') || id.includes('ARTHUR');
+    const isFemaleVoiceCode = (id: string) =>
+      /-(tpf|sfg|tpe|gba|gbg|enc|ena|female)\b/.test(id) || id.includes('samantha') || id.includes('ava');
+
+    if (wantMale) {
+      if (isMaleVoiceCode(aId)) aScore += 25;
+      if (isMaleVoiceCode(bId)) bScore += 25;
+    } else {
+      if (isFemaleVoiceCode(aId)) aScore += 25;
+      if (isFemaleVoiceCode(bId)) bScore += 25;
     }
+
+    return bScore - aScore;
+  });
+
+  const best = candidates[0];
+  // Subtle natural pitch shaping for warm narrator vs deep podcast host
+  const tunedPitch = wantMale
+    ? Math.max(0.85, basePitch * 0.93)
+    : Math.min(1.15, basePitch * 1.02);
+
+  return {
+    voice: best?.identifier,
+    language: best?.language || (wantBritish ? 'en-GB' : wantIndian ? 'en-IN' : 'en-US'),
+    pitch: tunedPitch,
   };
-</script>
-</body>
-</html>`;
+}
+
+/**
+ * Queries the device OS (iOS AVSpeechSynthesizer / Android Google TTS) and prioritizes Enhanced/Neural voices.
+ */
+export async function discoverDeviceNeuralVoices(): Promise<TTSVoiceOption[]> {
+  try {
+    const rawVoices = await getSystemVoices();
+    const englishVoices = rawVoices.filter((v) => v.language?.toLowerCase().startsWith('en'));
+
+    englishVoices.sort((a, b) => scoreVoiceQuality(b) - scoreVoiceQuality(a));
+
+    return englishVoices.slice(0, 10).map((v) => {
+      const idLower = (v.identifier || '').toLowerCase();
+      const isNetworkNeural =
+        v.quality === Speech.VoiceQuality.Enhanced ||
+        idLower.includes('-network') ||
+        idLower.includes('neural') ||
+        idLower.includes('wavenet');
+
+      return {
+        id: v.identifier,
+        name: `${v.name} (${v.language})`,
+        language: v.language,
+        engine: 'os-native',
+        badge: isNetworkNeural ? 'ANDROID WAVENET / ENHANCED' : 'DEVICE VOICE',
+      };
+    });
+  } catch {
+    return [];
+  }
 }

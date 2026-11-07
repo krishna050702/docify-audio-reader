@@ -31,6 +31,7 @@
       },
       "permissions": [
         "READ_EXTERNAL_STORAGE",
+        "POST_NOTIFICATIONS",
         "FOREGROUND_SERVICE",
         "FOREGROUND_SERVICE_MEDIA_PLAYBACK",
         "WAKE_LOCK",
@@ -69,12 +70,14 @@
         }
       ],
       [
-        "expo-av",
+        "expo-audio",
         {
-          "microphonePermission": false
+          "microphonePermission": false,
+          "enableBackgroundPlayback": true
         }
       ],
-      "expo-asset"
+      "expo-asset",
+      "expo-font"
     ],
     "extra": {
       "eas": {

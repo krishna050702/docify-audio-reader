@@ -13,15 +13,16 @@ import { UploadModal } from '../components/UploadModal';
 import { usePlayerStore } from '../store/usePlayerStore';
 
 export const LibraryScreen: React.FC = () => {
-  const {
-    albums,
-    activeAlbumId,
-    isPlaying,
-    playAlbum,
-    deleteAlbum,
-    setFullPlayerOpen,
-    ttsConfig,
-  } = usePlayerStore();
+  const albums = usePlayerStore((s) => s.albums);
+  const activeAlbumId = usePlayerStore((s) => s.activeAlbumId);
+  const activeChapterIndex = usePlayerStore((s) => s.activeChapterIndex);
+  const activeSegmentIndex = usePlayerStore((s) => s.activeSegmentIndex);
+  const isPlaying = usePlayerStore((s) => s.isPlaying);
+  const playAlbum = usePlayerStore((s) => s.playAlbum);
+  const togglePlayPause = usePlayerStore((s) => s.togglePlayPause);
+  const deleteAlbum = usePlayerStore((s) => s.deleteAlbum);
+  const setFullPlayerOpen = usePlayerStore((s) => s.setFullPlayerOpen);
+  const ttsConfig = usePlayerStore((s) => s.ttsConfig);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [uploadVisible, setUploadVisible] = useState(false);
@@ -33,6 +34,14 @@ export const LibraryScreen: React.FC = () => {
   );
 
   const continueAlbum = albums.find((a) => a.id === activeAlbumId) || albums[0];
+  const continueChapIdx =
+    continueAlbum?.id === activeAlbumId
+      ? activeChapterIndex
+      : continueAlbum?.lastPlayedChapterIndex || 0;
+  const continueSegIdx =
+    continueAlbum?.id === activeAlbumId
+      ? activeSegmentIndex
+      : continueAlbum?.lastPlayedSegmentIndex || 0;
 
   return (
     <View style={styles.container}>
@@ -84,7 +93,9 @@ export const LibraryScreen: React.FC = () => {
             <TouchableOpacity
               activeOpacity={0.9}
               onPress={() => {
-                playAlbum(continueAlbum.id);
+                if (activeAlbumId !== continueAlbum.id || !isPlaying) {
+                  playAlbum(continueAlbum.id);
+                }
                 setFullPlayerOpen(true);
               }}
             >
@@ -101,8 +112,8 @@ export const LibraryScreen: React.FC = () => {
                     </Text>
                   </View>
                   <Text style={styles.heroTimeLeft}>
-                    {continueAlbum.chapters.length} Tracks • ~
-                    {Math.max(1, Math.round(continueAlbum.totalDurationSec / 60))} min listen
+                    Track {continueChapIdx + 1}/{continueAlbum.chapters.length} • Sentence{' '}
+                    {continueSegIdx + 1}
                   </Text>
                 </View>
 
@@ -111,22 +122,32 @@ export const LibraryScreen: React.FC = () => {
                 </Text>
                 <Text style={styles.heroChapterSub} numberOfLines={1}>
                   Up next:{' '}
-                  {continueAlbum.chapters[continueAlbum.lastPlayedChapterIndex]?.title ||
+                  {continueAlbum.chapters[continueChapIdx]?.title ||
                     continueAlbum.chapters[0]?.title}
                 </Text>
 
                 <View style={styles.heroPlayRow}>
                   <View style={styles.lyricsReadyTag}>
                     <Ionicons name="musical-notes" size={13} color="#1DB954" />
-                    <Text style={styles.lyricsReadyText}>Synced Lyrics & Auto-Chapters</Text>
+                    <Text style={styles.lyricsReadyText}>Synced Lyrics & Auto-Resume</Text>
                   </View>
-                  <View style={styles.heroPlayCircle}>
+                  <TouchableOpacity
+                    style={styles.heroPlayCircle}
+                    onPress={(e) => {
+                      e.stopPropagation();
+                      if (activeAlbumId === continueAlbum.id) {
+                        togglePlayPause();
+                      } else {
+                        playAlbum(continueAlbum.id);
+                      }
+                    }}
+                  >
                     <Ionicons
                       name={isPlaying && activeAlbumId === continueAlbum.id ? 'pause' : 'play'}
                       size={22}
                       color="#000"
                     />
-                  </View>
+                  </TouchableOpacity>
                 </View>
               </LinearGradient>
             </TouchableOpacity>
@@ -141,12 +162,16 @@ export const LibraryScreen: React.FC = () => {
 
           {filteredAlbums.map((album) => {
             const isCurrent = album.id === activeAlbumId;
+            const savedChap = isCurrent ? activeChapterIndex : album.lastPlayedChapterIndex || 0;
+            const savedSeg = isCurrent ? activeSegmentIndex : album.lastPlayedSegmentIndex || 0;
             return (
               <TouchableOpacity
                 key={album.id}
                 style={[styles.albumCard, isCurrent && styles.albumCardActive]}
                 onPress={() => {
-                  playAlbum(album.id);
+                  if (!isCurrent || !isPlaying) {
+                    playAlbum(album.id);
+                  }
                   setFullPlayerOpen(true);
                 }}
               >
@@ -172,7 +197,7 @@ export const LibraryScreen: React.FC = () => {
                     {album.title}
                   </Text>
                   <Text style={styles.albumSub} numberOfLines={1}>
-                    {album.authorOrSource} • {album.chapters.length} Chapters
+                    Track {savedChap + 1}/{album.chapters.length} • Sentence {savedSeg + 1}
                   </Text>
                   <View style={styles.albumTagRow}>
                     <View style={styles.metaChip}>
@@ -184,11 +209,30 @@ export const LibraryScreen: React.FC = () => {
                     <View style={styles.metaChip}>
                       <Ionicons name="flash-outline" size={12} color="#1DB954" />
                       <Text style={[styles.metaChipText, { color: '#1DB954' }]}>
-                        Track 0 Summary
+                        Auto-Resume
                       </Text>
                     </View>
                   </View>
                 </View>
+
+                <TouchableOpacity
+                  onPress={(e) => {
+                    e.stopPropagation();
+                    if (isCurrent) {
+                      togglePlayPause();
+                    } else {
+                      playAlbum(album.id);
+                    }
+                  }}
+                  style={styles.cardPlayToggleBtn}
+                  accessibilityLabel={isCurrent && isPlaying ? 'Pause' : 'Play'}
+                >
+                  <Ionicons
+                    name={isCurrent && isPlaying ? 'pause-circle' : 'play-circle'}
+                    size={32}
+                    color="#1DB954"
+                  />
+                </TouchableOpacity>
 
                 <TouchableOpacity
                   onPress={() => deleteAlbum(album.id)}
@@ -399,6 +443,10 @@ const styles = StyleSheet.create({
     color: '#B3B3B3',
     fontSize: 11,
     fontWeight: '600',
+  },
+  cardPlayToggleBtn: {
+    padding: 6,
+    marginRight: 2,
   },
   deleteBtn: {
     padding: 8,

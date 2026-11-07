@@ -1,7 +1,9 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as LegacyFileSystem from 'expo-file-system/legacy';
 import { create } from 'zustand';
-import { createJSONStorage, persist } from 'zustand/middleware';
+import { persist, PersistStorage, StorageValue } from 'zustand/middleware';
 import { getInitialSampleAlbums } from '../services/documentParser';
+import { getSegmentWords } from '../services/textCleaner';
 import { ttsEngine } from '../services/ttsEngine';
 import {
   BookmarkClip,
@@ -11,11 +13,213 @@ import {
   TTSEngineMode,
 } from '../types';
 
+const STORE_FILE_URI = LegacyFileSystem.documentDirectory
+  ? `${LegacyFileSystem.documentDirectory}docify-player-store-v2.json`
+  : null;
+
+/**
+ * Tiny ~150-byte file that flushes reading position (chapter + sentence index) immediately
+ * on every sentence transition or pause so closing & reopening the app NEVER loses position.
+ */
+const PROGRESS_FILE_URI = LegacyFileSystem.documentDirectory
+  ? `${LegacyFileSystem.documentDirectory}docify-playback-progress-v2.json`
+  : null;
+
+interface ProgressSnapshot {
+  activeAlbumId: string | null;
+  activeChapterIndex: number;
+  activeSegmentIndex: number;
+  perAlbum: Record<string, { chapterIndex: number; segmentIndex: number }>;
+}
+
+let cachedPerAlbumProgress: Record<string, { chapterIndex: number; segmentIndex: number }> = {};
+
+function saveInstantProgressSnapshot(
+  activeAlbumId: string | null,
+  activeChapterIndex: number,
+  activeSegmentIndex: number,
+  albums?: DocumentAlbum[]
+): void {
+  if (albums) {
+    for (const a of albums) {
+      cachedPerAlbumProgress[a.id] = {
+        chapterIndex: a.lastPlayedChapterIndex || 0,
+        segmentIndex: a.lastPlayedSegmentIndex || 0,
+      };
+    }
+  }
+  if (activeAlbumId) {
+    cachedPerAlbumProgress[activeAlbumId] = {
+      chapterIndex: activeChapterIndex,
+      segmentIndex: activeSegmentIndex,
+    };
+  }
+
+  if (!PROGRESS_FILE_URI) return;
+  const payload: ProgressSnapshot = {
+    activeAlbumId,
+    activeChapterIndex,
+    activeSegmentIndex,
+    perAlbum: cachedPerAlbumProgress,
+  };
+
+  LegacyFileSystem.writeAsStringAsync(PROGRESS_FILE_URI, JSON.stringify(payload), {
+    encoding: LegacyFileSystem.EncodingType.UTF8,
+  }).catch(() => {});
+}
+
+let sqliteCleanedUp = false;
+async function cleanupBloatedSqliteOnce(): Promise<void> {
+  if (sqliteCleanedUp) return;
+  sqliteCleanedUp = true;
+  try {
+    await AsyncStorage.removeItem('docify-spotify-reader-storage');
+    await AsyncStorage.clear();
+  } catch {}
+}
+
+interface PersistedPlayerSlice {
+  albums: DocumentAlbum[];
+  playlists: Playlist[];
+  bookmarks: BookmarkClip[];
+  activeAlbumId: string | null;
+  activeChapterIndex: number;
+  activeSegmentIndex: number;
+  ttsConfig: TTSConfig;
+}
+
+let lastAlbumsRef: DocumentAlbum[] | null = null;
+let lastPlaylistsRef: Playlist[] | null = null;
+let lastBookmarksRef: BookmarkClip[] | null = null;
+let lastTtsConfigRef: TTSConfig | null = null;
+let persistDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+const fastDebouncedFileStorage: PersistStorage<PersistedPlayerSlice> = {
+  getItem: async (name: string): Promise<StorageValue<PersistedPlayerSlice> | null> => {
+    await cleanupBloatedSqliteOnce();
+    try {
+      let parsed: StorageValue<PersistedPlayerSlice> | null = null;
+      if (STORE_FILE_URI) {
+        const info = await LegacyFileSystem.getInfoAsync(STORE_FILE_URI);
+        if (info.exists) {
+          const content = await LegacyFileSystem.readAsStringAsync(STORE_FILE_URI, {
+            encoding: LegacyFileSystem.EncodingType.UTF8,
+          });
+          parsed = JSON.parse(content) as StorageValue<PersistedPlayerSlice>;
+        }
+      }
+      if (!parsed) {
+        const fallback = await AsyncStorage.getItem(name);
+        if (fallback) {
+          parsed = JSON.parse(fallback) as StorageValue<PersistedPlayerSlice>;
+        }
+      }
+
+      // Overlay the instant progress snapshot so exact chapter & sentence position is always restored
+      if (parsed?.state && PROGRESS_FILE_URI) {
+        try {
+          const progInfo = await LegacyFileSystem.getInfoAsync(PROGRESS_FILE_URI);
+          if (progInfo.exists) {
+            const rawProg = await LegacyFileSystem.readAsStringAsync(PROGRESS_FILE_URI, {
+              encoding: LegacyFileSystem.EncodingType.UTF8,
+            });
+            const prog = JSON.parse(rawProg) as ProgressSnapshot;
+            if (prog.perAlbum) {
+              cachedPerAlbumProgress = prog.perAlbum;
+              parsed.state.albums = (parsed.state.albums || []).map((a) => {
+                const saved = prog.perAlbum[a.id];
+                if (!saved) return a;
+                return {
+                  ...a,
+                  lastPlayedChapterIndex: saved.chapterIndex,
+                  lastPlayedSegmentIndex: saved.segmentIndex,
+                };
+              });
+            }
+            if (prog.activeAlbumId) {
+              parsed.state.activeAlbumId = prog.activeAlbumId;
+              parsed.state.activeChapterIndex = prog.activeChapterIndex ?? 0;
+              parsed.state.activeSegmentIndex = prog.activeSegmentIndex ?? 0;
+            }
+          }
+        } catch {}
+      }
+
+      return parsed;
+    } catch {
+      return null;
+    }
+  },
+  setItem: (_name: string, value: StorageValue<PersistedPlayerSlice>): void => {
+    const s = value.state;
+    if (
+      s.albums === lastAlbumsRef &&
+      s.playlists === lastPlaylistsRef &&
+      s.bookmarks === lastBookmarksRef &&
+      s.ttsConfig === lastTtsConfigRef
+    ) {
+      return;
+    }
+
+    lastAlbumsRef = s.albums;
+    lastPlaylistsRef = s.playlists;
+    lastBookmarksRef = s.bookmarks;
+    lastTtsConfigRef = s.ttsConfig;
+
+    if (persistDebounceTimer) {
+      clearTimeout(persistDebounceTimer);
+    }
+
+    persistDebounceTimer = setTimeout(async () => {
+      try {
+        const compactState: StorageValue<PersistedPlayerSlice> = {
+          version: value.version,
+          state: {
+            ...s,
+            albums: (s.albums || []).map((a) => ({
+              ...a,
+              chapters: (a.chapters || []).map((ch) => ({
+                ...ch,
+                segments: (ch.segments || []).map((seg) => ({
+                  id: seg.id,
+                  index: seg.index,
+                  text: seg.text,
+                  estimatedDurationSec: seg.estimatedDurationSec,
+                  startTimeOffsetSec: seg.startTimeOffsetSec,
+                  words: [],
+                })),
+              })),
+            })),
+          },
+        };
+        const serialized = JSON.stringify(compactState);
+        if (STORE_FILE_URI) {
+          await LegacyFileSystem.writeAsStringAsync(STORE_FILE_URI, serialized, {
+            encoding: LegacyFileSystem.EncodingType.UTF8,
+          });
+        }
+      } catch {}
+    }, 600);
+  },
+  removeItem: async (name: string): Promise<void> => {
+    try {
+      if (STORE_FILE_URI) {
+        await LegacyFileSystem.deleteAsync(STORE_FILE_URI, { idempotent: true });
+      }
+      if (PROGRESS_FILE_URI) {
+        await LegacyFileSystem.deleteAsync(PROGRESS_FILE_URI, { idempotent: true });
+      }
+      await AsyncStorage.removeItem(name);
+    } catch {}
+  },
+};
+
 interface PlayerState {
   // Library & Playlists
   albums: DocumentAlbum[];
   playlists: Playlist[];
   bookmarks: BookmarkClip[];
+  hasHydrated: boolean;
 
   // Active Playback State
   activeAlbumId: string | null;
@@ -69,39 +273,87 @@ const DEFAULT_TTS_CONFIG: TTSConfig = {
 export const usePlayerStore = create<PlayerState>()(
   persist(
     (set, get) => {
+      const syncPositionAndPersist = (
+        albumId: string,
+        chapterIdx: number,
+        segmentIdx: number
+      ) => {
+        const state = get();
+        const album = state.albums.find((a) => a.id === albumId);
+        if (album) {
+          album.lastPlayedChapterIndex = chapterIdx;
+          album.lastPlayedSegmentIndex = segmentIdx;
+        }
+        saveInstantProgressSnapshot(albumId, chapterIdx, segmentIdx, state.albums);
+      };
+
       const startCurrentSegmentPlayback = () => {
         const state = get();
         const album = state.albums.find((a) => a.id === state.activeAlbumId);
         if (!album) return;
 
-        const chapter = album.chapters[state.activeChapterIndex];
+        const chapter = album.chapters[state.activeChapterIndex] || album.chapters[0];
         if (!chapter) return;
 
-        const segment = chapter.segments[state.activeSegmentIndex];
+        const segment = chapter.segments[state.activeSegmentIndex] || chapter.segments[0];
         if (!segment) return;
 
-        // Prefetch upcoming 2 segments in the background for zero-latency transitions
-        const nextSeg1 = chapter.segments[state.activeSegmentIndex + 1];
-        const nextSeg2 = chapter.segments[state.activeSegmentIndex + 2];
-        if (nextSeg1) ttsEngine.prefetchSegmentAudio(nextSeg1, state.ttsConfig);
-        if (nextSeg2) ttsEngine.prefetchSegmentAudio(nextSeg2, state.ttsConfig);
+        getSegmentWords(segment);
 
-        ttsEngine.speakSegment(segment, state.ttsConfig, {
-          onWordIndexChange: (wordIdx) => {
-            set({ activeWordIndex: wordIdx });
+        const nextSeg1 = chapter.segments[state.activeSegmentIndex + 1];
+        if (nextSeg1) ttsEngine.prefetchSegmentAudio(nextSeg1, state.ttsConfig);
+
+        ttsEngine.speakSegment(
+          segment,
+          state.ttsConfig,
+          {
+            onWordIndexChange: (wordIdx) => {
+              const current = get();
+              if (current.isFullPlayerOpen && current.activeWordIndex !== wordIdx) {
+                set({ activeWordIndex: wordIdx });
+              }
+            },
+            onSegmentProgress: () => {},
+            onSegmentComplete: () => {
+              const latest = get();
+              if (!latest.isPlaying) return;
+              latest.skipNextSegment();
+            },
+            onError: () => {
+              set({ isPlaying: false });
+            },
+            onExternalPause: () => {
+              set({ isPlaying: false });
+              const latest = get();
+              if (latest.activeAlbumId) {
+                syncPositionAndPersist(
+                  latest.activeAlbumId,
+                  latest.activeChapterIndex,
+                  latest.activeSegmentIndex
+                );
+              }
+            },
+            onExternalResume: () => {
+              const latest = get();
+              if (!latest.isPlaying) {
+                set({ isPlaying: true });
+                startCurrentSegmentPlayback();
+              }
+            },
+            onExternalNext: () => {
+              get().skipNextSegment();
+            },
+            onExternalPrev: () => {
+              get().skipPrevSegment();
+            },
           },
-          onSegmentProgress: (elapsedSec, durationSec) => {
-            set({ segmentElapsedSec: elapsedSec, segmentDurationSec: durationSec });
-          },
-          onSegmentComplete: () => {
-            const latest = get();
-            if (!latest.isPlaying) return;
-            latest.skipNextSegment();
-          },
-          onError: () => {
-            set({ isPlaying: false });
-          },
-        });
+          {
+            albumTitle: album.title,
+            chapterTitle: chapter.title,
+            segmentIndex: state.activeSegmentIndex,
+            totalSegments: chapter.segments.length,
+          }
+        );
       };
 
       return {
@@ -123,6 +375,7 @@ export const usePlayerStore = create<PlayerState>()(
           },
         ],
         bookmarks: [],
+        hasHydrated: false,
         activeAlbumId: null,
         activeChapterIndex: 0,
         activeSegmentIndex: 0,
@@ -135,7 +388,8 @@ export const usePlayerStore = create<PlayerState>()(
         ttsConfig: DEFAULT_TTS_CONFIG,
 
         initializeDefaultsIfEmpty: () => {
-          const { albums, ttsConfig } = get();
+          const { albums, hasHydrated, ttsConfig } = get();
+          if (!hasHydrated) return;
           if (albums.length === 0) {
             const samples = getInitialSampleAlbums(ttsConfig);
             set({
@@ -153,18 +407,25 @@ export const usePlayerStore = create<PlayerState>()(
             activeSegmentIndex: 0,
             activeWordIndex: 0,
           }));
+          saveInstantProgressSnapshot(album.id, 0, 0);
         },
 
         deleteAlbum: (albumId) => {
           const state = get();
           if (state.activeAlbumId === albumId) {
-            ttsEngine.stop();
+            ttsEngine.stop(true);
           }
-          set((s) => ({
-            albums: s.albums.filter((a) => a.id !== albumId),
-            activeAlbumId: s.activeAlbumId === albumId ? null : s.activeAlbumId,
-            isPlaying: s.activeAlbumId === albumId ? false : s.isPlaying,
-          }));
+          delete cachedPerAlbumProgress[albumId];
+          set((s) => {
+            const remaining = s.albums.filter((a) => a.id !== albumId);
+            const nextActiveId =
+              s.activeAlbumId === albumId ? remaining[0]?.id || null : s.activeAlbumId;
+            return {
+              albums: remaining,
+              activeAlbumId: nextActiveId,
+              isPlaying: s.activeAlbumId === albumId ? false : s.isPlaying,
+            };
+          });
         },
 
         playAlbum: (albumId, chapterIndex, segmentIndex) => {
@@ -172,13 +433,50 @@ export const usePlayerStore = create<PlayerState>()(
           const album = state.albums.find((a) => a.id === albumId);
           if (!album) return;
 
-          const chIdx = chapterIndex ?? album.lastPlayedChapterIndex ?? 0;
-          const segIdx = segmentIndex ?? (chapterIndex !== undefined ? 0 : album.lastPlayedSegmentIndex ?? 0);
+          const isSameAlbum = state.activeAlbumId === albumId;
+
+          // If caller didn't specify explicit chapter/segment, resume from saved position
+          const savedAlbumPos = cachedPerAlbumProgress[albumId];
+          const targetChap =
+            chapterIndex !== undefined
+              ? chapterIndex
+              : isSameAlbum
+              ? state.activeChapterIndex
+              : savedAlbumPos?.chapterIndex ?? album.lastPlayedChapterIndex ?? 0;
+
+          const targetSeg =
+            segmentIndex !== undefined
+              ? segmentIndex
+              : chapterIndex !== undefined
+              ? 0
+              : isSameAlbum
+              ? state.activeSegmentIndex
+              : savedAlbumPos?.segmentIndex ?? album.lastPlayedSegmentIndex ?? 0;
+
+          // Clamp to valid chapter and segment bounds
+          const safeChap = Math.max(0, Math.min(targetChap, Math.max(0, album.chapters.length - 1)));
+          const chapObj = album.chapters[safeChap];
+          const safeSeg = Math.max(
+            0,
+            Math.min(targetSeg, Math.max(0, (chapObj?.segments.length || 1) - 1))
+          );
+
+          // If already playing this exact segment on the same album, don't restart from scratch
+          if (
+            isSameAlbum &&
+            state.isPlaying &&
+            chapterIndex === undefined &&
+            segmentIndex === undefined
+          ) {
+            return;
+          }
+
+          syncPositionAndPersist(albumId, safeChap, safeSeg);
 
           set({
             activeAlbumId: albumId,
-            activeChapterIndex: chIdx,
-            activeSegmentIndex: segIdx,
+            activeChapterIndex: safeChap,
+            activeSegmentIndex: safeSeg,
             activeWordIndex: 0,
             isPlaying: true,
           });
@@ -189,13 +487,20 @@ export const usePlayerStore = create<PlayerState>()(
         togglePlayPause: () => {
           const state = get();
           if (!state.activeAlbumId && state.albums.length > 0) {
-            get().playAlbum(state.albums[0].id, 0, 0);
+            get().playAlbum(state.albums[0].id);
             return;
           }
 
           if (state.isPlaying) {
-            ttsEngine.stop();
+            ttsEngine.stop(false);
             set({ isPlaying: false });
+            if (state.activeAlbumId) {
+              syncPositionAndPersist(
+                state.activeAlbumId,
+                state.activeChapterIndex,
+                state.activeSegmentIndex
+              );
+            }
           } else {
             set({ isPlaying: true });
             startCurrentSegmentPlayback();
@@ -219,25 +524,17 @@ export const usePlayerStore = create<PlayerState>()(
           }
 
           if (nextChapIdx >= album.chapters.length) {
-            // Reached the end of the document album
-            ttsEngine.stop();
+            ttsEngine.stop(true);
             set({ isPlaying: false, activeWordIndex: 0 });
             return;
           }
 
-          // Persist progress inside the album item
-          const updatedAlbums = state.albums.map((a) =>
-            a.id === album.id
-              ? { ...a, lastPlayedChapterIndex: nextChapIdx, lastPlayedSegmentIndex: nextSegIdx }
-              : a
-          );
+          syncPositionAndPersist(album.id, nextChapIdx, nextSegIdx);
 
           set({
-            albums: updatedAlbums,
             activeChapterIndex: nextChapIdx,
             activeSegmentIndex: nextSegIdx,
             activeWordIndex: 0,
-            segmentElapsedSec: 0,
           });
 
           if (state.isPlaying) {
@@ -263,11 +560,12 @@ export const usePlayerStore = create<PlayerState>()(
             }
           }
 
+          syncPositionAndPersist(album.id, prevChapIdx, prevSegIdx);
+
           set({
             activeChapterIndex: prevChapIdx,
             activeSegmentIndex: prevSegIdx,
             activeWordIndex: 0,
-            segmentElapsedSec: 0,
           });
 
           if (state.isPlaying) {
@@ -280,6 +578,8 @@ export const usePlayerStore = create<PlayerState>()(
           const album = state.albums.find((a) => a.id === state.activeAlbumId);
           if (!album || !album.chapters[chapterIndex]) return;
 
+          syncPositionAndPersist(album.id, chapterIndex, 0);
+
           set({
             activeChapterIndex: chapterIndex,
             activeSegmentIndex: 0,
@@ -290,8 +590,17 @@ export const usePlayerStore = create<PlayerState>()(
         },
 
         seekToSegment: (segmentIndex) => {
+          const state = get();
+          const album = state.albums.find((a) => a.id === state.activeAlbumId);
+          if (!album) return;
+          const chapter = album.chapters[state.activeChapterIndex];
+          if (!chapter) return;
+
+          const clamped = Math.max(0, Math.min(segmentIndex, Math.max(0, chapter.segments.length - 1)));
+          syncPositionAndPersist(album.id, state.activeChapterIndex, clamped);
+
           set({
-            activeSegmentIndex: segmentIndex,
+            activeSegmentIndex: clamped,
             activeWordIndex: 0,
             isPlaying: true,
           });
@@ -387,9 +696,9 @@ export const usePlayerStore = create<PlayerState>()(
       };
     },
     {
-      name: 'docify-spotify-reader-storage',
-      storage: createJSONStorage(() => AsyncStorage),
-      partialize: (state) => ({
+      name: 'docify-spotify-reader-storage-v2',
+      storage: fastDebouncedFileStorage,
+      partialize: (state): PersistedPlayerSlice => ({
         albums: state.albums,
         playlists: state.playlists,
         bookmarks: state.bookmarks,
@@ -398,6 +707,17 @@ export const usePlayerStore = create<PlayerState>()(
         activeSegmentIndex: state.activeSegmentIndex,
         ttsConfig: state.ttsConfig,
       }),
+      onRehydrateStorage: () => (state) => {
+        if (!state) {
+          usePlayerStore.setState({ hasHydrated: true });
+          usePlayerStore.getState().initializeDefaultsIfEmpty();
+          return;
+        }
+        usePlayerStore.setState({ hasHydrated: true, isPlaying: false });
+        if (!state.albums || state.albums.length === 0) {
+          usePlayerStore.getState().initializeDefaultsIfEmpty();
+        }
+      },
     }
   )
 );

@@ -5,24 +5,25 @@ import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { usePlayerStore } from '../store/usePlayerStore';
 
 export const MiniPlayer: React.FC = () => {
-  const {
-    albums,
-    activeAlbumId,
-    activeChapterIndex,
-    activeSegmentIndex,
-    isPlaying,
-    togglePlayPause,
-    skipNextSegment,
-    setFullPlayerOpen,
-    addBookmarkFromCurrent,
-  } = usePlayerStore();
+  const albums = usePlayerStore((s) => s.albums);
+  const activeAlbumId = usePlayerStore((s) => s.activeAlbumId);
+  const activeChapterIndex = usePlayerStore((s) => s.activeChapterIndex);
+  const activeSegmentIndex = usePlayerStore((s) => s.activeSegmentIndex);
+  const isPlaying = usePlayerStore((s) => s.isPlaying);
+  const togglePlayPause = usePlayerStore((s) => s.togglePlayPause);
+  const skipPrevSegment = usePlayerStore((s) => s.skipPrevSegment);
+  const skipNextSegment = usePlayerStore((s) => s.skipNextSegment);
+  const setFullPlayerOpen = usePlayerStore((s) => s.setFullPlayerOpen);
 
   const activeAlbum = albums.find((a) => a.id === activeAlbumId) || albums[0];
   if (!activeAlbum) return null;
 
   const chapter = activeAlbum.chapters[activeChapterIndex] || activeAlbum.chapters[0];
   const totalSegments = chapter?.segments.length || 1;
-  const progressPercent = Math.min(100, Math.round(((activeSegmentIndex + 1) / totalSegments) * 100));
+  const progressPercent = Math.min(
+    100,
+    Math.round(((activeSegmentIndex + 1) / totalSegments) * 100)
+  );
 
   return (
     <TouchableOpacity
@@ -49,19 +50,20 @@ export const MiniPlayer: React.FC = () => {
             {chapter?.title || activeAlbum.title}
           </Text>
           <Text style={styles.albumSub} numberOfLines={1}>
-            {activeAlbum.title} • Track {activeChapterIndex + 1}/{activeAlbum.chapters.length}
+            Track {activeChapterIndex + 1}/{activeAlbum.chapters.length} • Sentence{' '}
+            {activeSegmentIndex + 1}/{totalSegments}
           </Text>
         </View>
 
         <TouchableOpacity
           onPress={(e) => {
             e.stopPropagation();
-            addBookmarkFromCurrent();
+            skipPrevSegment();
           }}
           style={styles.iconBtn}
-          accessibilityLabel="Save Audio Bookmark"
+          accessibilityLabel="Previous Sentence"
         >
-          <Ionicons name="heart-outline" size={22} color="#B3B3B3" />
+          <Ionicons name="play-skip-back" size={20} color="#FFFFFF" />
         </TouchableOpacity>
 
         <TouchableOpacity
@@ -147,7 +149,7 @@ const styles = StyleSheet.create({
     marginHorizontal: 4,
   },
   progressTrack: {
-    height: 2.5,
+    height: 3,
     backgroundColor: 'rgba(255,255,255,0.12)',
     width: '100%',
   },

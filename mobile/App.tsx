@@ -1,7 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
 import { StatusBar } from 'expo-status-bar';
 import React, { useEffect, useState } from 'react';
-import { SafeAreaView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { MiniPlayer } from './src/components/MiniPlayer';
 import { NowPlayingModal } from './src/components/NowPlayingModal';
 import { LibraryScreen } from './src/screens/LibraryScreen';
@@ -18,83 +19,85 @@ export default function App() {
   }, [initializeDefaultsIfEmpty]);
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <StatusBar style="light" />
+    <SafeAreaProvider>
+      <SafeAreaView style={styles.safeArea}>
+        <StatusBar style="light" />
 
-      {/* Main Screen Content */}
-      <View style={styles.mainViewport}>
-        {activeTab === 'library' && <LibraryScreen />}
-        {activeTab === 'playlists' && <PlaylistsScreen />}
-        {activeTab === 'settings' && <SettingsScreen />}
-      </View>
-
-      {/* Persistent Spotify Mini-Player Docked Above Bottom Tabs */}
-      <View style={styles.bottomDock}>
-        <MiniPlayer />
-
-        <View style={styles.tabBar}>
-          <TouchableOpacity
-            style={styles.tabItem}
-            onPress={() => setActiveTab('library')}
-          >
-            <Ionicons
-              name={activeTab === 'library' ? 'library' : 'library-outline'}
-              size={22}
-              color={activeTab === 'library' ? '#1DB954' : '#8E8E93'}
-            />
-            <Text
-              style={[
-                styles.tabLabel,
-                activeTab === 'library' && styles.tabLabelActive,
-              ]}
-            >
-              Library
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.tabItem}
-            onPress={() => setActiveTab('playlists')}
-          >
-            <Ionicons
-              name={activeTab === 'playlists' ? 'heart' : 'heart-outline'}
-              size={22}
-              color={activeTab === 'playlists' ? '#1DB954' : '#8E8E93'}
-            />
-            <Text
-              style={[
-                styles.tabLabel,
-                activeTab === 'playlists' && styles.tabLabelActive,
-              ]}
-            >
-              Clips & Queues
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.tabItem}
-            onPress={() => setActiveTab('settings')}
-          >
-            <Ionicons
-              name={activeTab === 'settings' ? 'hardware-chip' : 'hardware-chip-outline'}
-              size={22}
-              color={activeTab === 'settings' ? '#1DB954' : '#8E8E93'}
-            />
-            <Text
-              style={[
-                styles.tabLabel,
-                activeTab === 'settings' && styles.tabLabelActive,
-              ]}
-            >
-              Neural TTS
-            </Text>
-          </TouchableOpacity>
+        {/* Main Screen Content */}
+        <View style={styles.mainViewport}>
+          {activeTab === 'library' && <LibraryScreen />}
+          {activeTab === 'playlists' && <PlaylistsScreen />}
+          {activeTab === 'settings' && <SettingsScreen />}
         </View>
-      </View>
 
-      {/* Full Screen Spotify Lyrics & Chapters Modal */}
-      <NowPlayingModal />
-    </SafeAreaView>
+        {/* Persistent Spotify Mini-Player Docked Above Bottom Tabs */}
+        <View style={styles.bottomDock}>
+          <MiniPlayer />
+
+          <View style={styles.tabBar}>
+            <TouchableOpacity
+              style={styles.tabItem}
+              onPress={() => setActiveTab('library')}
+            >
+              <Ionicons
+                name={activeTab === 'library' ? 'library' : 'library-outline'}
+                size={22}
+                color={activeTab === 'library' ? '#1DB954' : '#8E8E93'}
+              />
+              <Text
+                style={[
+                  styles.tabLabel,
+                  activeTab === 'library' && styles.tabLabelActive,
+                ]}
+              >
+                Library
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.tabItem}
+              onPress={() => setActiveTab('playlists')}
+            >
+              <Ionicons
+                name={activeTab === 'playlists' ? 'heart' : 'heart-outline'}
+                size={22}
+                color={activeTab === 'playlists' ? '#1DB954' : '#8E8E93'}
+              />
+              <Text
+                style={[
+                  styles.tabLabel,
+                  activeTab === 'playlists' && styles.tabLabelActive,
+                ]}
+              >
+                Clips & Queues
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.tabItem}
+              onPress={() => setActiveTab('settings')}
+            >
+              <Ionicons
+                name={activeTab === 'settings' ? 'hardware-chip' : 'hardware-chip-outline'}
+                size={22}
+                color={activeTab === 'settings' ? '#1DB954' : '#8E8E93'}
+              />
+              <Text
+                style={[
+                  styles.tabLabel,
+                  activeTab === 'settings' && styles.tabLabelActive,
+                ]}
+              >
+                Neural TTS
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* Full Screen Spotify Lyrics & Chapters Modal */}
+        <NowPlayingModal />
+      </SafeAreaView>
+    </SafeAreaProvider>
   );
 }
 
